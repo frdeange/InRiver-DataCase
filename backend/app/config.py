@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any
 
-from pydantic import Field, computed_field
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,39 +13,31 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- Entra ID ---
-    azure_tenant_id: str = Field(..., description="Azure Entra ID tenant ID")
-    azure_client_id: str = Field(..., description="App Registration client ID (audience)")
+    # --- Azure AI Foundry ---
+    ms_foundry_project_endpoint: str = Field(default="", description="Azure AI Foundry project endpoint URL")
+    mf_foundry_deployment_name: str = Field(default="gpt-5.4", description="Model deployment name")
 
-    # --- Azure OpenAI ---
-    azure_openai_endpoint: str = Field(..., description="Azure OpenAI / AI Foundry endpoint URL")
-    azure_openai_key: str = Field(..., description="Azure OpenAI API key")
-    azure_openai_deployment: str = Field(default="gpt-4.1", description="Deployment name")
+    # --- Azure SQL ---
+    azure_sql_server: str = Field(default="", description="Azure SQL FQDN")
+    azure_sql_database_prefix: str = Field(default="db", description="Database name prefix, e.g. 'db' -> 'db-acme'")
+    azure_sql_user: str = Field(default="", description="SQL login username")
+    azure_sql_password: str = Field(default="", description="SQL login password")
 
-    # --- Database connection strings ---
-    db_acme_connection_string: str = Field(..., description="SQLAlchemy connection string for ACME DB")
-    db_nova_connection_string: str = Field(..., description="SQLAlchemy connection string for Nova DB")
-    db_apex_connection_string: str = Field(..., description="SQLAlchemy connection string for Apex DB")
-
-    # --- Optional telemetry ---
-    appinsights_connection_string: str | None = Field(
-        default=None, description="Application Insights connection string"
-    )
+    # --- Dev mode ---
+    use_local_sqlite: bool = Field(default=True, description="Use local SQLite files instead of Azure SQL")
 
     # --- CORS ---
-    allowed_origins: str = Field(
-        default="http://localhost:3000",
-        description="Comma-separated list of allowed CORS origins",
-    )
+    allowed_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
+
+    # --- Entra ID token validation ---
+    jwt_tenant_id: str = Field(default="", description="Azure Entra ID tenant ID for JWT validation")
+    jwt_audience: str = Field(default="", description="App Registration client ID (JWT audience)")
+
+    # --- Optional telemetry ---
+    appinsights_connection_string: str = Field(default="", description="Application Insights connection string")
 
     # --- Query safety limits ---
-    max_query_length: int = Field(default=2000, description="Maximum allowed question length in characters")
     query_timeout_seconds: int = Field(default=30, description="SQL query execution timeout in seconds")
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def allowed_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
 
 @lru_cache(maxsize=1)

@@ -1,4 +1,5 @@
-import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios";
+import axios from "axios";
+import type { AxiosInstance, InternalAxiosRequestConfig } from "axios";
 import { apiConfig } from "../auth/msalConfig";
 
 let tokenGetter: (() => Promise<string>) | null = null;

@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect, KeyboardEvent } from "react";
-import { postQuery, QueryResult } from "../api/queries";
+import { useState, useRef, useEffect } from "react";
+import type { KeyboardEvent } from "react";
+import { postQuery } from "../api/queries";
+import type { QueryResult } from "../api/queries";
+import { AxiosError } from "axios";
 import DatabaseSelector from "./DatabaseSelector";
 import SqlDisplay from "./SqlDisplay";
 import ResultsTable from "./ResultsTable";
-import { AxiosError } from "axios";
 
 interface Message {
   id: string;
@@ -140,7 +142,7 @@ export default function ChatInterface() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
-                <span className="text-sm text-gray-500">Thinking…</span>
+                <span className="text-sm text-gray-500">Thinking\u2026</span>
               </div>
             </div>
           </div>
@@ -156,7 +158,7 @@ export default function ChatInterface() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask a question about your product data…"
+            placeholder="Ask a question about your product data\u2026"
             rows={2}
             disabled={loading || !selectedDb}
             className="flex-1 resize-none text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
@@ -180,7 +182,7 @@ export default function ChatInterface() {
             )}
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-1 ml-1">Enter to send · Shift+Enter for new line</p>
+        <p className="text-xs text-gray-400 mt-1 ml-1">Enter to send \u00b7 Shift+Enter for new line</p>
       </div>
     </div>
   );
