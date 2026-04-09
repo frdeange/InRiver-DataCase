@@ -1,5 +1,6 @@
 import { useMsal } from "@azure/msal-react";
-import { AccountInfo, InteractionRequiredAuthError } from "@azure/msal-browser";
+import type { AccountInfo } from "@azure/msal-browser";
+import { InteractionRequiredAuthError } from "@azure/msal-browser";
 import { loginRequest } from "./msalConfig";
 
 export function useAuthToken(): { getToken: () => Promise<string>; account: AccountInfo | null } {
