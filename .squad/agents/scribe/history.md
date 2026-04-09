@@ -1,16 +1,11 @@
-# Project Context
-
-- **Project:** InRiver-DataCase
-- **Created:** 2026-04-09
+# Scribe — History
 
 ## Core Context
 
-Agent Scribe initialized and ready for work.
-
-## Recent Updates
-
-📌 Team initialized on 2026-04-09
+- **Project:** A secure multi-tenant Azure-hosted web app with authenticated user login, per-user database access controls, and an AI agent that safely executes validated SQL queries against customer-simulated databases.
+- **Role:** Session Logger
+- **Joined:** 2026-04-09T11:46:58.948Z
 
 ## Learnings
 
-Initial setup complete.
+<!-- Append learnings below -->
