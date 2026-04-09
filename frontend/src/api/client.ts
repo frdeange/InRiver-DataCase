@@ -1,33 +1,34 @@
-import axios from "axios";
-import type { AxiosInstance, InternalAxiosRequestConfig } from "axios";
-import { apiConfig } from "../auth/msalConfig";
+import axios from "axios"
+import type { AxiosInstance, InternalAxiosRequestConfig } from "axios"
 
-let tokenGetter: (() => Promise<string>) | null = null;
+const BASE_URL: string = (import.meta.env.VITE_API_URL as string | undefined) ?? ""
+
+let tokenGetter: (() => Promise<string>) | null = null
 
 export function setTokenGetter(getter: () => Promise<string>) {
-  tokenGetter = getter;
+  tokenGetter = getter
 }
 
 const client: AxiosInstance = axios.create({
-  baseURL: apiConfig.baseUrl,
-});
+  baseURL: BASE_URL,
+})
 
 client.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   if (tokenGetter) {
-    const token = await tokenGetter();
-    config.headers.set("Authorization", `Bearer ${token}`);
+    const token = await tokenGetter()
+    config.headers.set("Authorization", `Bearer ${token}`)
   }
-  return config;
-});
+  return config
+})
 
 client.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      window.location.href = "/login";
+  (error: unknown) => {
+    if ((error as { response?: { status?: number } }).response?.status === 401) {
+      window.location.href = "/login"
     }
-    return Promise.reject(error);
+    return Promise.reject(error)
   }
-);
+)
 
-export default client;
+export default client

@@ -6,7 +6,6 @@ from typing import Any
 
 import httpx
 from jose import jwt, JWTError, ExpiredSignatureError
-from jose.backends import RSAKey
 
 from app.config import get_settings
 
@@ -27,7 +26,7 @@ def _get_jwks() -> dict[str, Any]:
         return _jwks_cache
 
     settings = get_settings()
-    tenant_id = settings.azure_tenant_id
+    tenant_id = settings.jwt_tenant_id
     jwks_url = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
 
     logger.info("Fetching JWKS from %s", jwks_url)
@@ -59,8 +58,8 @@ def validate_token(token: str) -> dict[str, Any]:
         ValueError: If the token is invalid, expired, or cannot be verified.
     """
     settings = get_settings()
-    tenant_id = settings.azure_tenant_id
-    client_id = settings.azure_client_id
+    tenant_id = settings.jwt_tenant_id
+    client_id = settings.jwt_audience
 
     expected_issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
 

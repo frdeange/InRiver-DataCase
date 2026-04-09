@@ -1,59 +1,43 @@
-import { useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { MsalProvider, AuthenticatedTemplate, UnauthenticatedTemplate } from "@azure/msal-react";
-import { PublicClientApplication } from "@azure/msal-browser";
-import { msalConfig } from "./auth/msalConfig";
-import { setTokenGetter } from "./api/client";
-import { useAuthToken } from "./auth/useAuthToken";
-import LoginPage from "./components/LoginPage";
-import Layout from "./components/Layout";
-import ChatInterface from "./components/ChatInterface";
+import { Navigate, Route, Routes, BrowserRouter } from 'react-router-dom'
+import { MsalProvider } from '@azure/msal-react'
+import { isDemoMode, msalInstance } from './auth/msalConfig'
+import { useAuth } from './auth/useAuth'
+import QueryPage from './pages/QueryPage'
+import LoginPage from './pages/LoginPage'
+import NotFoundPage from './pages/NotFoundPage'
 
-const msalInstance = new PublicClientApplication(msalConfig);
-
-function TokenSetter() {
-  const { getToken } = useAuthToken();
-  useEffect(() => {
-    setTokenGetter(getToken);
-  }, [getToken]);
-  return null;
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth()
+  if (isLoading) return <p className="loading-text">Loading…</p>
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />
 }
 
 function AppRoutes() {
   return (
-    <>
-      <TokenSetter />
-      <AuthenticatedTemplate>
-        <Routes>
-          <Route path="/" element={<Navigate to="/chat" replace />} />
-          <Route path="/login" element={<Navigate to="/chat" replace />} />
-          <Route
-            path="/chat"
-            element={
-              <Layout>
-                <ChatInterface />
-              </Layout>
-            }
-          />
-          <Route path="*" element={<Navigate to="/chat" replace />} />
-        </Routes>
-      </AuthenticatedTemplate>
-      <UnauthenticatedTemplate>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </UnauthenticatedTemplate>
-    </>
-  );
+    <BrowserRouter>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <QueryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </BrowserRouter>
+  )
 }
 
 export default function App() {
+  if (isDemoMode) {
+    return <AppRoutes />
+  }
   return (
     <MsalProvider instance={msalInstance}>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
+      <AppRoutes />
     </MsalProvider>
-  );
+  )
 }

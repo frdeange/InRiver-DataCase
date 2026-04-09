@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import create_engine, text, event
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import QueuePool, StaticPool
 
 from app.config import get_settings
 
@@ -16,8 +16,36 @@ _engines: dict[str, Engine] = {}
 VALID_CUSTOMER_DBS = {"acme", "nova", "apex"}
 
 
-def _build_engine(connection_string: str) -> Engine:
-    """Create a SQLAlchemy engine with sensible pool settings."""
+def _build_connection_string(customer_db: str) -> str:
+    """Build a SQLAlchemy connection string for the given customer DB key."""
+    settings = get_settings()
+    server = settings.azure_sql_server
+    prefix = settings.azure_sql_database_prefix
+    user = settings.azure_sql_user
+    password = settings.azure_sql_password
+    db_name = f"{prefix}-{customer_db}" if prefix else customer_db
+    return (
+        f"mssql+pyodbc://{user}:{password}@{server}/{db_name}"
+        f"?driver=ODBC+Driver+18+for+SQL+Server"
+    )
+
+
+def _build_engine(customer_db: str) -> Engine:
+    """Create a SQLAlchemy engine for the given customer database."""
+    settings = get_settings()
+
+    if settings.use_local_sqlite:
+        import os
+        db_dir = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+        os.makedirs(db_dir, exist_ok=True)
+        db_path = os.path.join(db_dir, f"{customer_db}.db")
+        return create_engine(
+            f"sqlite:///{db_path}",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+
+    connection_string = _build_connection_string(customer_db)
     return create_engine(
         connection_string,
         poolclass=QueuePool,
@@ -25,8 +53,12 @@ def _build_engine(connection_string: str) -> Engine:
         max_overflow=10,
         pool_timeout=30,
         pool_pre_ping=True,
-        connect_args={"timeout": 30},
     )
+
+
+def get_available_databases() -> list[str]:
+    """Return the list of valid customer database keys."""
+    return sorted(VALID_CUSTOMER_DBS)
 
 
 def get_engine(customer_db: str) -> Engine:
@@ -42,13 +74,7 @@ def get_engine(customer_db: str) -> Engine:
         raise ValueError(f"Unknown customer database: '{customer_db}'. Must be one of {VALID_CUSTOMER_DBS}.")
 
     if customer_db not in _engines:
-        settings = get_settings()
-        conn_map: dict[str, str] = {
-            "acme": settings.db_acme_connection_string,
-            "nova": settings.db_nova_connection_string,
-            "apex": settings.db_apex_connection_string,
-        }
-        _engines[customer_db] = _build_engine(conn_map[customer_db])
+        _engines[customer_db] = _build_engine(customer_db)
         logger.info("Created engine for customer DB '%s'.", customer_db)
 
     return _engines[customer_db]
@@ -60,7 +86,7 @@ def execute_query(customer_db: str, sql: str, timeout: int | None = None) -> lis
     Args:
         customer_db: One of 'acme', 'nova', 'apex'.
         sql: A validated SELECT statement.
-        timeout: Per-query timeout in seconds. Falls back to ``QUERY_TIMEOUT_SECONDS``.
+        timeout: Per-query timeout in seconds. Falls back to ``query_timeout_seconds``.
 
     Returns:
         A list of row dicts (column_name → value).
@@ -75,8 +101,8 @@ def execute_query(customer_db: str, sql: str, timeout: int | None = None) -> lis
     try:
         engine = get_engine(customer_db)
         with engine.connect() as conn:
-            # Set a per-session statement timeout for Azure SQL
-            conn.execute(text(f"SET LOCK_TIMEOUT {effective_timeout * 1000}"))
+            if not settings.use_local_sqlite:
+                conn.execute(text(f"SET LOCK_TIMEOUT {effective_timeout * 1000}"))
             result = conn.execute(text(sql))
             keys = list(result.keys())
             rows = [dict(zip(keys, row)) for row in result.fetchall()]
