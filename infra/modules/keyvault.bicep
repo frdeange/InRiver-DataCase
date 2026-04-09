@@ -24,7 +24,7 @@ param sqlAdminLogin string
 param sqlAdminPassword string
 
 // Key Vault name: globally unique, max 24 chars, alphanumeric + hyphens.
-var kvName = 'kv-inrdc-${take(uniqueString(resourceGroup().id), 8)}'
+var kvName = 'kv-inrdc-${environment}-${take(uniqueString(resourceGroup().id), 6)}'
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: kvName

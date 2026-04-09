@@ -9,6 +9,7 @@ param tags object
 @description('Key Vault name (used to grant the managed identity access).')
 param keyVaultName string
 
+@secure()
 @description('Application Insights connection string (injected as a container secret).')
 param appInsightsConnectionString string
 

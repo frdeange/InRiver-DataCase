@@ -52,7 +52,8 @@ var dbSku = {
 var dbProperties = {
   collation: 'SQL_Latin1_General_CP1_CI_AS'
   autoPauseDelay: 60
-  minCapacity: '0.5'
+  // minCapacity is a decimal (0.5 vCores); any() bypasses the incorrect int type in Bicep definitions.
+  minCapacity: any(json('0.5'))
   requestedBackupStorageRedundancy: 'Local'
 }
 

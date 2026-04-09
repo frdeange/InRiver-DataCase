@@ -13,6 +13,7 @@ param sqlAdminLogin string
 @description('SQL Server administrator password.')
 param sqlAdminPassword string
 
+@secure()
 @description('Application Insights connection string from the existing AI Foundry workspace.')
 param appInsightsConnectionString string
 
