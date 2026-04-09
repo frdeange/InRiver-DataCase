@@ -1,66 +1,73 @@
-# frontend/
+# React + TypeScript + Vite
 
-React + TypeScript + Vite frontend for the InRiver Agentic SQL PoC.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Structure
+Currently, two official plugins are available:
 
-```
-frontend/
-├── src/
-│   ├── main.tsx             # App entry point, MSAL provider wrapper
-│   ├── App.tsx              # Root component, routing
-│   ├── auth/                # MSAL configuration and auth hooks
-│   │   ├── msalConfig.ts    # MSAL PublicClientApplication config (client ID, tenant, scopes)
-│   │   └── useAuth.ts       # Hook: current user, login/logout, getAccessToken()
-│   ├── components/          # Reusable UI components
-│   │   ├── QueryInput.tsx   # Natural language query text area + submit button
-│   │   ├── SqlPreview.tsx   # Displays the AI-generated SQL (read-only code block)
-│   │   ├── ResultsTable.tsx # Renders query results as a sortable table
-│   │   ├── AuditBadge.tsx   # Shows guardrail decision (ALLOWED/BLOCKED + reason)
-│   │   └── DatabaseSelector.tsx # Dropdown of user's permitted databases
-│   ├── pages/               # Route-level components
-│   │   ├── LoginPage.tsx    # Shown to unauthenticated users; triggers MSAL redirect
-│   │   ├── QueryPage.tsx    # Main query interface (requires auth)
-│   │   └── NotFoundPage.tsx # 404
-│   └── api/                 # API client functions
-│       └── queryApi.ts      # Typed fetch wrapper for POST /api/query, GET /api/databases
-├── index.html
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
-```
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## Local Development
+## React Compiler
 
-```bash
-cd frontend
-npm install
-cp .env.example .env.local   # Fill in VITE_CLIENT_ID, VITE_TENANT_ID, VITE_API_URL
-npm run dev                   # Vite dev server on http://localhost:5173
-```
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-The Vite dev server proxies `/api/*` to `http://localhost:8000` to avoid CORS issues during local development. See `vite.config.ts`.
+## Expanding the ESLint configuration
 
-## Environment Variables
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
 
-| Variable | Description |
-|----------|-------------|
-| `VITE_CLIENT_ID` | Entra ID App Registration client ID |
-| `VITE_TENANT_ID` | Entra ID tenant ID |
-| `VITE_API_URL` | Backend API base URL (empty in dev — uses Vite proxy) |
-| `VITE_API_SCOPE` | OAuth2 scope for backend API (e.g., `api://<client-id>/query.read`) |
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
 
-## Auth Flow
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
 
-1. Unauthenticated users are redirected to `LoginPage` which calls `msalInstance.loginRedirect()`.
-2. After Entra ID login, MSAL stores the access token in session storage.
-3. `useAuth.ts` provides `getAccessToken()` which silently refreshes the token as needed.
-4. All API calls include `Authorization: Bearer <token>` from `getAccessToken()`.
-
-## Build
-
-```bash
-npm run build   # Output to dist/
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
 
-The `Dockerfile` in this directory serves the built static files via nginx.
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
+```
