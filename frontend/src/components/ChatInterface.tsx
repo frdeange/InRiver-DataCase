@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from "react"
 import type { KeyboardEvent } from "react"
-import { postQuery } from "../api/queries"
+import { postQuery, getDatabases } from "../api/queries"
 import type { QueryResult } from "../api/queries"
-import { fetchDatabases } from "../api/queryApi"
 import DatabaseSelector from "./DatabaseSelector"
 import SqlDisplay from "./SqlDisplay"
 import ResultsTable from "./ResultsTable"
@@ -23,7 +22,7 @@ export default function ChatInterface() {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    fetchDatabases("", null)
+    getDatabases()
       .then((res) => {
         setDatabases(res.databases)
         if (res.databases.length > 0) setSelectedDb(res.databases[0])
@@ -50,9 +49,12 @@ export default function ChatInterface() {
 
     try {
       const result = await postQuery({ question, customer_db: selectedDb })
+      const summary = result.blocked
+        ? `Blocked: ${result.block_reason ?? "Query was not allowed."}`
+        : `Query returned ${result.row_count} row${result.row_count !== 1 ? "s" : ""}.`
       setMessages((prev) => [
         ...prev,
-        { id: `assistant-${Date.now()}`, type: "assistant", content: result.explanation, result },
+        { id: `assistant-${Date.now()}`, type: "assistant", content: summary, result },
       ])
     } catch (err) {
       const detail = err instanceof Error ? err.message : "An unexpected error occurred."

@@ -1,1 +1,5 @@
-agent-framework==1.0.0
+# Backend Python dependencies are managed in backend/requirements.txt
+# This file is intentionally minimal — see backend/ for the full list.
+#
+# Install backend deps:
+#   cd backend && pip install -r requirements.txt

@@ -1,3 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# Azure
+parameters.demo.json
+*.tfstate
+
+# OS
+.DS_Store
+Thumbs.db
+
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/orchestration-log/
 .squad/log/
@@ -14,6 +40,5 @@ infra/parameters.*.json
 infra/*.json
 !infra/parameters.*.json.example
 
-/frontend/node_modules/
-/frontend/dist/
-/frontend/.env
+# Local SQLite dev databases
+backend/data/
