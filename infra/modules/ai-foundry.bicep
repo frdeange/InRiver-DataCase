@@ -1,8 +1,13 @@
 // ============================================================
-// Azure AI Foundry: AI Services + AI Hub + AI Project
+// Azure AI Foundry (new architecture — 2025-10-01-preview)
 // ============================================================
-// Conditionally creates the full AI Foundry stack. When an
-// existing AI Project ID is provided, all creation is skipped.
+// Structure:
+//   CognitiveServices/accounts          (AI Services)
+//     └─ accounts/projects              (AI Project — child resource)
+//     └─ accounts/deployments           (Model deployments)
+//     └─ accounts/connections            (Storage, App Insights, etc.)
+//
+// No more ML Hub/Workspace. Everything under CognitiveServices.
 // ============================================================
 
 @description('Azure region')
@@ -14,56 +19,90 @@ param resourcePrefix string
 @description('Existing Azure AI Project resource ID (empty = create new)')
 param existingAiProjectId string = ''
 
-@description('Storage Account resource ID (required for AI Hub)')
+@description('Storage Account resource ID (for account connection)')
 param storageId string
 
-@description('Key Vault resource ID (required for AI Hub)')
-param keyVaultId string
+@description('Storage Account name')
+param storageName string
 
-@description('Application Insights resource ID (required for AI Hub)')
+@description('Application Insights resource ID (for account connection)')
 param appInsightsId string
+
+@description('Application Insights instrumentation key (required for ApiKey auth on connection)')
+@secure()
+param appInsightsInstrumentationKey string
 
 @description('Principal ID of managed identity for Cognitive Services OpenAI User role')
 param identityPrincipalId string
 
 @description('Model to deploy (e.g. gpt-4o, gpt-5.4)')
-param modelName string = 'gpt-4o'
+param modelName string = 'gpt-5.4'
 
-@description('Model version (empty = latest)')
-param modelVersion string = ''
+@description('Model version')
+param modelVersion string = '2026-03-05'
 
 @description('Model deployment SKU name')
 param modelSkuName string = 'GlobalStandard'
 
-@description('Model deployment capacity (thousands of tokens per minute)')
-param modelCapacity int = 30
+@description('Model deployment capacity (tokens per minute in thousands)')
+param modelCapacity int = 100
 
 var createAiFoundry = empty(existingAiProjectId)
+var aiServicesName = '${resourcePrefix}-ais'
+var projectName = '${resourcePrefix}-project'
 
-// ---- Azure AI Services account ----
+// ============================================================
+// 1. AI Services Account
+// ============================================================
 
-resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = if (createAiFoundry) {
-  name: '${resourcePrefix}-ais'
+resource aiServices 'Microsoft.CognitiveServices/accounts@2025-10-01-preview' = if (createAiFoundry) {
+  name: aiServicesName
   location: location
   kind: 'AIServices'
   sku: {
     name: 'S0'
   }
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
-    customSubDomainName: '${resourcePrefix}-ais'
+    customSubDomainName: aiServicesName
     publicNetworkAccess: 'Enabled'
+    disableLocalAuth: true
+    allowProjectManagement: true
+    networkAcls: {
+      defaultAction: 'Allow'
+      virtualNetworkRules: []
+      ipRules: []
+    }
   }
 }
 
-// ---- Model Deployment ----
-// Deploys the specified model (e.g. gpt-4o) so the agents have
-// an actual model endpoint to call via FoundryChatClient.
+// ============================================================
+// 2. AI Project (child of AI Services account)
+// ============================================================
 
-var deploymentName = modelName // Use model name as deployment name
-
-resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = if (createAiFoundry) {
+resource aiProject 'Microsoft.CognitiveServices/accounts/projects@2025-10-01-preview' = if (createAiFoundry) {
   parent: aiServices
-  name: deploymentName
+  name: projectName
+  location: location
+  kind: 'AIServices'
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    displayName: '${resourcePrefix} Project'
+    description: 'InRiver-DataCase PoC project'
+  }
+}
+
+// ============================================================
+// 3. Model Deployment (gpt-5.4 by default)
+// ============================================================
+
+resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview' = if (createAiFoundry) {
+  parent: aiServices
+  name: modelName
   sku: {
     name: modelSkuName
     capacity: modelCapacity
@@ -72,89 +111,89 @@ resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
     model: {
       format: 'OpenAI'
       name: modelName
-      version: !empty(modelVersion) ? modelVersion : null
+      version: modelVersion
     }
+    versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
     raiPolicyName: 'Microsoft.DefaultV2'
   }
 }
 
-// ---- Azure AI Hub ----
+// ============================================================
+// 4. Account-level Connections (Storage + App Insights)
+// ============================================================
 
-resource aiHub 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = if (createAiFoundry) {
-  name: '${resourcePrefix}-hub'
-  location: location
-  kind: 'Hub'
-  sku: {
-    name: 'Basic'
-  }
-  identity: {
-    type: 'SystemAssigned'
-  }
+resource storageConnection 'Microsoft.CognitiveServices/accounts/connections@2025-10-01-preview' = if (createAiFoundry) {
+  parent: aiServices
+  name: '${storageName}-connection'
   properties: {
-    friendlyName: '${resourcePrefix} AI Hub'
-    storageAccount: storageId
-    keyVault: keyVaultId
-    applicationInsights: appInsightsId
-  }
-}
-
-// ---- AI Services connection on the hub ----
-
-resource aiServicesConnection 'Microsoft.MachineLearningServices/workspaces/connections@2024-10-01' = if (createAiFoundry) {
-  parent: aiHub
-  name: 'Default_AIServices'
-  properties: {
-    category: 'AIServices'
-    target: aiServices.properties.endpoint
     authType: 'AAD'
+    category: 'AzureStorageAccount'
+    target: 'https://${storageName}.blob.core.windows.net/'
+    useWorkspaceManagedIdentity: false
+    isSharedToAll: true
+    sharedUserList: []
+    peRequirement: 'NotRequired'
+    peStatus: 'NotApplicable'
     metadata: {
       ApiType: 'Azure'
-      ResourceId: aiServices.id
+      ResourceId: storageId
+      location: location
     }
   }
 }
 
-// ---- Azure AI Project ----
-
-resource aiProject 'Microsoft.MachineLearningServices/workspaces@2024-10-01' = if (createAiFoundry) {
-  name: '${resourcePrefix}-project'
-  location: location
-  kind: 'Project'
-  sku: {
-    name: 'Basic'
-  }
-  identity: {
-    type: 'SystemAssigned'
-  }
+resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/connections@2025-10-01-preview' = if (createAiFoundry) {
+  parent: aiServices
+  name: 'appinsights-connection'
   properties: {
-    friendlyName: '${resourcePrefix} AI Project'
-    hubResourceId: aiHub.id
+    authType: 'ApiKey'
+    category: 'AppInsights'
+    target: appInsightsId
+    credentials: {
+      key: appInsightsInstrumentationKey
+    }
+    useWorkspaceManagedIdentity: false
+    isSharedToAll: true
+    sharedUserList: []
+    peRequirement: 'NotRequired'
+    peStatus: 'NotApplicable'
+    metadata: {
+      ApiType: 'Azure'
+      ResourceId: appInsightsId
+    }
   }
 }
 
-// ---- Cognitive Services OpenAI User role for managed identity ----
+// ============================================================
+// 5. Role Assignment — Cognitive Services OpenAI User
+// ============================================================
 
 var cognitiveServicesOpenAiUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 
 resource openAiUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createAiFoundry) {
-  name: guid('${resourcePrefix}-ais', identityPrincipalId, cognitiveServicesOpenAiUserRoleId)
+  name: guid(aiServicesName, identityPrincipalId, cognitiveServicesOpenAiUserRoleId)
   scope: aiServices
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesOpenAiUserRoleId)
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      cognitiveServicesOpenAiUserRoleId
+    )
     principalId: identityPrincipalId
     principalType: 'ServicePrincipal'
   }
 }
 
-// ---- Existing project reference (when reusing) ----
+// ============================================================
+// Outputs
+// ============================================================
 
-resource existingProject 'Microsoft.MachineLearningServices/workspaces@2024-10-01' existing = if (!createAiFoundry) {
-  name: last(split(existingAiProjectId, '/'))
-}
-
-// ---- Outputs ----
-
+// Project endpoint: https://{account}.services.ai.azure.com/api/projects/{project}
+output aiProjectEndpoint string = createAiFoundry
+  ? 'https://${aiServicesName}.services.ai.azure.com/api/projects/${projectName}'
+  : ''
+output aiServicesEndpoint string = createAiFoundry
+  ? 'https://${aiServicesName}.services.ai.azure.com/'
+  : ''
 output aiProjectId string = createAiFoundry ? aiProject.id : existingAiProjectId
-output aiProjectEndpoint string = createAiFoundry ? aiProject.properties.discoveryUrl : existingProject.properties.discoveryUrl
-output aiServicesEndpoint string = createAiFoundry ? aiServices.properties.endpoint : ''
-output modelDeploymentName string = createAiFoundry ? deploymentName : ''
+output modelDeploymentName string = createAiFoundry ? modelName : ''
+output aiServicesName string = createAiFoundry ? aiServicesName : ''

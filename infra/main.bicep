@@ -46,8 +46,8 @@ param existingAiProjectId string = ''
 @description('AI model to deploy (e.g. gpt-4o, gpt-5.4)')
 param aiModelName string = 'gpt-4o'
 
-@description('AI model version (empty = latest available)')
-param aiModelVersion string = ''
+@description('AI model version (empty = default 2026-03-05)')
+param aiModelVersion string = '2026-03-05'
 
 @description('AI model deployment SKU (GlobalStandard, Standard, ProvisionedManaged)')
 param aiModelSkuName string = 'GlobalStandard'
@@ -125,9 +125,9 @@ module keyvault 'modules/keyvault.bicep' = {
   }
 }
 
-// ---- 7. AI Foundry (Azure AI Services + Hub + Project) ----
-// Creates the full AI stack when existingAiProjectId is empty.
-// Depends on storage, keyvault, and monitoring for hub wiring.
+// ---- 7. AI Foundry (new architecture: AI Services + Project) ----
+// Creates AI Services account, project, model deployment, and connections.
+// No ML Hub — everything lives under CognitiveServices/accounts.
 module aiFoundry 'modules/ai-foundry.bicep' = {
   name: 'ai-foundry-deployment'
   params: {
@@ -135,8 +135,9 @@ module aiFoundry 'modules/ai-foundry.bicep' = {
     resourcePrefix: resourcePrefix
     existingAiProjectId: existingAiProjectId
     storageId: storage.outputs.storageId
-    keyVaultId: keyvault.outputs.keyVaultId
+    storageName: storage.outputs.storageName
     appInsightsId: monitoring.outputs.appInsightsId
+    appInsightsInstrumentationKey: monitoring.outputs.appInsightsInstrumentationKey
     identityPrincipalId: identity.outputs.principalId
     modelName: aiModelName
     modelVersion: aiModelVersion
