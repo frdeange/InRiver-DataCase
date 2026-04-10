@@ -1,22 +1,64 @@
 // ============================================================
 // InRiver-DataCase: Root Bicep Template
 // ============================================================
+// Deployment orchestrator — wires all modules together.
+// Supports both fresh deployments (creates all resources) and
+// existing-resource deployments (references pre-provisioned
+// resources by ID). Pass an existing*Id parameter to reuse
+// a resource instead of creating a new one.
+// ============================================================
 
 @description('Azure region for all resources')
 param location string = resourceGroup().location
-
-@description('SQL administrator password')
-@secure()
-param sqlAdminPassword string
 
 @description('Environment name (dev, staging, prod)')
 @allowed(['dev', 'staging', 'prod'])
 param envName string = 'dev'
 
+// ---- Azure SQL AD-only auth ----
+
+@description('Object ID of the Entra ID user/group for SQL admin')
+param sqlEntraAdminObjectId string
+
+@description('Display name of the SQL Entra admin')
+param sqlEntraAdminDisplayName string = 'SQL Admins'
+
+@description('Principal type of Entra admin: User or Group')
+@allowed(['User', 'Group'])
+param sqlEntraAdminPrincipalType string = 'User'
+
+// ---- Existing-resource overrides (empty = create new) ----
+
+@description('Existing Log Analytics workspace resource ID (empty = create new)')
+param existingLogAnalyticsId string = ''
+
+@description('Existing Application Insights resource ID (empty = create new)')
+param existingAppInsightsId string = ''
+
+@description('Existing Storage Account resource ID (empty = create new)')
+param existingStorageId string = ''
+
+@description('Existing Azure AI Project resource ID (empty = create new)')
+param existingAiProjectId string = ''
+
+// ---- AI Model deployment configuration ----
+
+@description('AI model to deploy (e.g. gpt-4o, gpt-5.4)')
+param aiModelName string = 'gpt-4o'
+
+@description('AI model version (empty = latest available)')
+param aiModelVersion string = ''
+
+@description('AI model deployment SKU (GlobalStandard, Standard, ProvisionedManaged)')
+param aiModelSkuName string = 'GlobalStandard'
+
+@description('AI model deployment capacity (thousands of tokens per minute)')
+param aiModelCapacity int = 30
+
 var projectName = 'inriver'
 var resourcePrefix = '${projectName}-${envName}'
 
-// ---- Managed Identity ----
+// ---- 1. Managed Identity ----
 module identity 'modules/identity.bicep' = {
   name: 'identity-deployment'
   params: {
@@ -25,7 +67,31 @@ module identity 'modules/identity.bicep' = {
   }
 }
 
-// ---- Azure Container Registry ----
+// ---- 2. Monitoring (Log Analytics + Application Insights) ----
+// If existing IDs are provided, the module references them
+// instead of creating new resources.
+module monitoring 'modules/monitoring.bicep' = {
+  name: 'monitoring-deployment'
+  params: {
+    location: location
+    resourcePrefix: resourcePrefix
+    existingLogAnalyticsId: existingLogAnalyticsId
+    existingAppInsightsId: existingAppInsightsId
+  }
+}
+
+// ---- 3. Storage Account ----
+// Conditionally created; pass existingStorageId to reuse.
+module storage 'modules/storage.bicep' = {
+  name: 'storage-deployment'
+  params: {
+    location: location
+    resourcePrefix: resourcePrefix
+    existingStorageId: existingStorageId
+  }
+}
+
+// ---- 4. Azure Container Registry ----
 module acr 'modules/acr.bicep' = {
   name: 'acr-deployment'
   params: {
@@ -35,17 +101,19 @@ module acr 'modules/acr.bicep' = {
   }
 }
 
-// ---- Azure SQL Server + Databases ----
+// ---- 5. Azure SQL Server + Databases ----
 module sql 'modules/sql.bicep' = {
   name: 'sql-deployment'
   params: {
     location: location
     resourcePrefix: resourcePrefix
-    sqlAdminPassword: sqlAdminPassword
+    entraAdminObjectId: sqlEntraAdminObjectId
+    entraAdminDisplayName: sqlEntraAdminDisplayName
+    entraAdminPrincipalType: sqlEntraAdminPrincipalType
   }
 }
 
-// ---- Key Vault ----
+// ---- 6. Key Vault ----
 module keyvault 'modules/keyvault.bicep' = {
   name: 'keyvault-deployment'
   params: {
@@ -57,7 +125,29 @@ module keyvault 'modules/keyvault.bicep' = {
   }
 }
 
-// ---- Container Apps ----
+// ---- 7. AI Foundry (Azure AI Services + Hub + Project) ----
+// Creates the full AI stack when existingAiProjectId is empty.
+// Depends on storage, keyvault, and monitoring for hub wiring.
+module aiFoundry 'modules/ai-foundry.bicep' = {
+  name: 'ai-foundry-deployment'
+  params: {
+    location: location
+    resourcePrefix: resourcePrefix
+    existingAiProjectId: existingAiProjectId
+    storageId: storage.outputs.storageId
+    keyVaultId: keyvault.outputs.keyVaultId
+    appInsightsId: monitoring.outputs.appInsightsId
+    identityPrincipalId: identity.outputs.principalId
+    modelName: aiModelName
+    modelVersion: aiModelVersion
+    modelSkuName: aiModelSkuName
+    modelCapacity: aiModelCapacity
+  }
+}
+
+// ---- 8. Container Apps ----
+// Receives Log Analytics + App Insights from monitoring module
+// and AI Project endpoint from aiFoundry module.
 module containerApps 'modules/container-apps.bicep' = {
   name: 'container-apps-deployment'
   params: {
@@ -67,6 +157,10 @@ module containerApps 'modules/container-apps.bicep' = {
     identityId: identity.outputs.identityId
     identityClientId: identity.outputs.clientId
     keyVaultName: keyvault.outputs.keyVaultName
+    logAnalyticsCustomerId: monitoring.outputs.logAnalyticsCustomerId
+    logAnalyticsKey: monitoring.outputs.logAnalyticsKey
+    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+    aiProjectEndpoint: aiFoundry.outputs.aiProjectEndpoint
   }
 }
 
@@ -77,3 +171,7 @@ output frontendUrl string = containerApps.outputs.frontendUrl
 output backendUrl string = containerApps.outputs.backendUrl
 output keyVaultName string = keyvault.outputs.keyVaultName
 output identityClientId string = identity.outputs.clientId
+output appInsightsConnectionString string = monitoring.outputs.appInsightsConnectionString
+output aiProjectEndpoint string = aiFoundry.outputs.aiProjectEndpoint
+output modelDeploymentName string = aiFoundry.outputs.modelDeploymentName
+output storageAccountName string = storage.outputs.storageName

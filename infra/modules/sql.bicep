@@ -1,5 +1,7 @@
 // ============================================================
 // Azure SQL Logical Server + 3 Tenant Databases
+// Uses Azure AD-only authentication (no SQL admin password)
+// as required by MCAPS governance policies.
 // ============================================================
 
 @description('Azure region')
@@ -8,23 +10,34 @@ param location string
 @description('Resource name prefix')
 param resourcePrefix string
 
-@description('SQL administrator password')
-@secure()
-param sqlAdminPassword string
+@description('Object ID of the Entra ID user/group to set as SQL AD admin')
+param entraAdminObjectId string
+
+@description('Display name of the Entra ID admin')
+param entraAdminDisplayName string = 'SQL Admins'
+
+@description('Principal type of the admin (User or Group)')
+@allowed(['User', 'Group'])
+param entraAdminPrincipalType string = 'User'
 
 var sqlServerName = '${resourcePrefix}-sql'
-var sqlAdminLogin = 'sqladmin'
 var databases = ['db-acme', 'db-nova', 'db-apex']
 
 resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
   name: sqlServerName
   location: location
   properties: {
-    administratorLogin: sqlAdminLogin
-    administratorLoginPassword: sqlAdminPassword
     version: '12.0'
     minimalTlsVersion: '1.2'
     publicNetworkAccess: 'Enabled'
+    administrators: {
+      administratorType: 'ActiveDirectory'
+      azureADOnlyAuthentication: true
+      login: entraAdminDisplayName
+      principalType: entraAdminPrincipalType
+      sid: entraAdminObjectId
+      tenantId: subscription().tenantId
+    }
   }
 }
 

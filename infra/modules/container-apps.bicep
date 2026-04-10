@@ -20,18 +20,20 @@ param identityClientId string
 @description('Key Vault name for secret references')
 param keyVaultName string
 
-var envName = '${resourcePrefix}-cae'
+@description('Log Analytics workspace customer ID')
+param logAnalyticsCustomerId string
 
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
-  name: '${resourcePrefix}-logs'
-  location: location
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-    retentionInDays: 30
-  }
-}
+@description('Log Analytics workspace shared key')
+@secure()
+param logAnalyticsKey string
+
+@description('Application Insights connection string')
+param appInsightsConnectionString string
+
+@description('Azure AI Project endpoint')
+param aiProjectEndpoint string
+
+var envName = '${resourcePrefix}-cae'
 
 resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: envName
@@ -40,8 +42,8 @@ resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
     appLogsConfiguration: {
       destination: 'log-analytics'
       logAnalyticsConfiguration: {
-        customerId: logAnalytics.properties.customerId
-        sharedKey: logAnalytics.listKeys().primarySharedKey
+        customerId: logAnalyticsCustomerId
+        sharedKey: logAnalyticsKey
       }
     }
   }
@@ -90,6 +92,14 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'AZURE_KEYVAULT_NAME'
               value: keyVaultName
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsightsConnectionString
+            }
+            {
+              name: 'AZURE_AI_PROJECT_ENDPOINT'
+              value: aiProjectEndpoint
             }
           ]
         }
