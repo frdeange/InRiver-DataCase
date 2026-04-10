@@ -1,45 +1,39 @@
 from __future__ import annotations
 
-from functools import lru_cache
-
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+    }
 
-    # --- Azure AI Foundry ---
-    ms_foundry_project_endpoint: str = Field(default="", description="Azure AI Foundry project endpoint URL")
-    mf_foundry_deployment_name: str = Field(default="gpt-5.4", description="Model deployment name")
+    # Azure AI Foundry
+    azure_ai_project_endpoint: str = ""
+    azure_ai_model_deployment_name: str = "gpt-5.2"
 
-    # --- Azure SQL ---
-    azure_sql_server: str = Field(default="", description="Azure SQL FQDN")
-    azure_sql_database_prefix: str = Field(default="db", description="Database name prefix, e.g. 'db' -> 'db-acme'")
-    azure_sql_user: str = Field(default="", description="SQL login username")
-    azure_sql_password: str = Field(default="", description="SQL login password")
+    # Azure SQL per-tenant connections
+    sql_conn_acme: str = ""
+    sql_conn_nova: str = ""
+    sql_conn_apex: str = ""
 
-    # --- Dev mode ---
-    use_local_sqlite: bool = Field(default=True, description="Use local SQLite files instead of Azure SQL")
+    # Entra ID
+    azure_tenant_id: str = ""
+    azure_client_id: str = ""
 
-    # --- CORS ---
-    allowed_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
+    # Observability
+    log_level: str = "INFO"
+    audit_log_path: str = "./audit_logs"
+    applicationinsights_connection_string: str = ""
 
-    # --- Entra ID token validation ---
-    jwt_tenant_id: str = Field(default="", description="Azure Entra ID tenant ID for JWT validation")
-    jwt_audience: str = Field(default="", description="App Registration client ID (JWT audience)")
-
-    # --- Optional telemetry ---
-    appinsights_connection_string: str = Field(default="", description="Application Insights connection string")
-
-    # --- Query safety limits ---
-    query_timeout_seconds: int = Field(default=30, description="SQL query execution timeout in seconds")
+    @property
+    def tenant_connections(self) -> dict[str, str]:
+        return {
+            "acme": self.sql_conn_acme,
+            "nova": self.sql_conn_nova,
+            "apex": self.sql_conn_apex,
+        }
 
 
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    return Settings()
+settings = Settings()

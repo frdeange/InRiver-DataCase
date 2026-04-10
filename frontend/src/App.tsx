@@ -1,43 +1,43 @@
-import { Navigate, Route, Routes, BrowserRouter } from 'react-router-dom'
-import { MsalProvider } from '@azure/msal-react'
-import { isDemoMode, msalInstance } from './auth/msalConfig'
-import { useAuth } from './auth/useAuth'
-import QueryPage from './pages/QueryPage'
-import LoginPage from './pages/LoginPage'
-import NotFoundPage from './pages/NotFoundPage'
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth()
-  if (isLoading) return <p className="loading-text">Loading…</p>
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />
-}
-
-function AppRoutes() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <QueryPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </BrowserRouter>
-  )
-}
+import {
+  AuthenticatedTemplate,
+  UnauthenticatedTemplate,
+} from "@azure/msal-react";
+import { useAuth } from "./auth/useAuth";
+import Header from "./components/Header";
+import ChatWindow from "./components/ChatWindow";
+import QueryInput from "./components/QueryInput";
 
 export default function App() {
-  if (isDemoMode) {
-    return <AppRoutes />
-  }
+  const { login } = useAuth();
+
   return (
-    <MsalProvider instance={msalInstance}>
-      <AppRoutes />
-    </MsalProvider>
-  )
+    <div className="flex h-full flex-col bg-gray-50">
+      <AuthenticatedTemplate>
+        <Header />
+        <main className="flex flex-1 flex-col overflow-hidden">
+          <ChatWindow />
+          <QueryInput />
+        </main>
+      </AuthenticatedTemplate>
+
+      <UnauthenticatedTemplate>
+        <div className="flex h-full items-center justify-center">
+          <div className="text-center">
+            <h1 className="mb-4 text-3xl font-bold text-gray-800">
+              InRiver DataCase
+            </h1>
+            <p className="mb-8 text-gray-600">
+              Sign in to query your databases using natural language.
+            </p>
+            <button
+              onClick={login}
+              className="rounded-lg bg-blue-700 px-8 py-3 text-lg font-semibold text-white shadow-md transition hover:bg-blue-800"
+            >
+              Sign in with Microsoft
+            </button>
+          </div>
+        </div>
+      </UnauthenticatedTemplate>
+    </div>
+  );
 }

@@ -1,81 +1,79 @@
-targetScope = 'resourceGroup'
+// ============================================================
+// InRiver-DataCase: Root Bicep Template
+// ============================================================
 
-@description('Azure region for all resources.')
+@description('Azure region for all resources')
 param location string = resourceGroup().location
 
-@description('Environment identifier used in resource naming.')
-param environment string = 'demo'
-
-@description('SQL Server administrator login name.')
-param sqlAdminLogin string
-
+@description('SQL administrator password')
 @secure()
-@description('SQL Server administrator password.')
 param sqlAdminPassword string
 
-@secure()
-@description('Application Insights connection string from the existing AI Foundry workspace.')
-param appInsightsConnectionString string
+@description('Environment name (dev, staging, prod)')
+@allowed(['dev', 'staging', 'prod'])
+param envName string = 'dev'
 
-@description('Azure OpenAI endpoint URL (e.g. https://<name>.openai.azure.com/).')
-param openAiEndpoint string
+var projectName = 'inriver'
+var resourcePrefix = '${projectName}-${envName}'
 
-@secure()
-@description('Azure OpenAI API key.')
-param openAiKey string
-
-var tags = {
-  project: 'inriver-datacase'
-  environment: environment
+// ---- Managed Identity ----
+module identity 'modules/identity.bicep' = {
+  name: 'identity-deployment'
+  params: {
+    location: location
+    resourcePrefix: resourcePrefix
+  }
 }
 
-// ── SQL Server + Databases ────────────────────────────────────────────────────
+// ---- Azure Container Registry ----
+module acr 'modules/acr.bicep' = {
+  name: 'acr-deployment'
+  params: {
+    location: location
+    resourcePrefix: resourcePrefix
+    identityPrincipalId: identity.outputs.principalId
+  }
+}
 
+// ---- Azure SQL Server + Databases ----
 module sql 'modules/sql.bicep' = {
-  name: 'sqlDeploy'
+  name: 'sql-deployment'
   params: {
     location: location
-    environment: environment
-    tags: tags
-    sqlAdminLogin: sqlAdminLogin
+    resourcePrefix: resourcePrefix
     sqlAdminPassword: sqlAdminPassword
   }
 }
 
-// ── Key Vault (depends on SQL for FQDN) ──────────────────────────────────────
-
-module keyVault 'modules/keyvault.bicep' = {
-  name: 'keyVaultDeploy'
+// ---- Key Vault ----
+module keyvault 'modules/keyvault.bicep' = {
+  name: 'keyvault-deployment'
   params: {
     location: location
-    environment: environment
-    tags: tags
-    openAiKey: openAiKey
-    appInsightsConnectionString: appInsightsConnectionString
-    sqlServerFqdn: sql.outputs.fqdn
-    sqlAdminLogin: sqlAdminLogin
-    sqlAdminPassword: sqlAdminPassword
+    resourcePrefix: resourcePrefix
+    identityPrincipalId: identity.outputs.principalId
+    sqlServerFqdn: sql.outputs.sqlServerFqdn
+    sqlDatabaseNames: sql.outputs.databaseNames
   }
 }
 
-// ── Container Apps Environment + Apps ────────────────────────────────────────
-
+// ---- Container Apps ----
 module containerApps 'modules/container-apps.bicep' = {
-  name: 'containerAppsDeploy'
+  name: 'container-apps-deployment'
   params: {
     location: location
-    environment: environment
-    tags: tags
-    keyVaultName: keyVault.outputs.keyVaultName
-    appInsightsConnectionString: appInsightsConnectionString
-    openAiEndpoint: openAiEndpoint
+    resourcePrefix: resourcePrefix
+    acrLoginServer: acr.outputs.loginServer
+    identityId: identity.outputs.identityId
+    identityClientId: identity.outputs.clientId
+    keyVaultName: keyvault.outputs.keyVaultName
   }
 }
 
-// ── Outputs ───────────────────────────────────────────────────────────────────
-
-output keyVaultName string = keyVault.outputs.keyVaultName
-output sqlServerFqdn string = sql.outputs.fqdn
-output containerAppsEnvironmentId string = containerApps.outputs.environmentId
-output backendUrl string = containerApps.outputs.backendUrl
+// ---- Outputs ----
+output acrLoginServer string = acr.outputs.loginServer
+output sqlServerFqdn string = sql.outputs.sqlServerFqdn
 output frontendUrl string = containerApps.outputs.frontendUrl
+output backendUrl string = containerApps.outputs.backendUrl
+output keyVaultName string = keyvault.outputs.keyVaultName
+output identityClientId string = identity.outputs.clientId

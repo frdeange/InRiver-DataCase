@@ -1,91 +1,63 @@
-@description('Azure region.')
+// ============================================================
+// Azure Key Vault with SQL Connection String Secrets
+// ============================================================
+
+@description('Azure region')
 param location string
 
-@description('Environment identifier used in resource naming.')
-param environment string
+@description('Resource name prefix')
+param resourcePrefix string
 
-param tags object
+@description('Principal ID of managed identity for Key Vault Secrets User')
+param identityPrincipalId string
 
-@secure()
-@description('Azure OpenAI API key.')
-param openAiKey string
-
-@description('Application Insights connection string.')
-param appInsightsConnectionString string
-
-@description('SQL Server fully qualified domain name.')
+@description('SQL Server FQDN')
 param sqlServerFqdn string
 
-@description('SQL Server administrator login.')
-param sqlAdminLogin string
+@description('SQL database names')
+param sqlDatabaseNames array
 
-@secure()
-@description('SQL Server administrator password.')
-param sqlAdminPassword string
-
-// Key Vault name: globally unique, max 24 chars, alphanumeric + hyphens.
-var kvName = 'kv-inrdc-${environment}-${take(uniqueString(resourceGroup().id), 6)}'
+var kvName = replace('${resourcePrefix}-kv', '-', '')
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: kvName
   location: location
-  tags: tags
   properties: {
     sku: {
       family: 'A'
       name: 'standard'
     }
     tenantId: subscription().tenantId
-    // RBAC-based access — no legacy access policies needed.
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: 7
-    // Purge protection disabled for demo so the vault can be fully deleted.
     enablePurgeProtection: false
   }
 }
 
-// ── Secrets ───────────────────────────────────────────────────────────────────
+// Key Vault Secrets User role for managed identity
+var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
-resource secretOpenAiKey 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'openai-api-key'
-  properties: { value: openAiKey }
-}
-
-resource secretAppInsights 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'appinsights-connection-string'
-  properties: { value: appInsightsConnectionString }
-}
-
-// Connection strings use admin credentials initially.
-// After running database/init-schema.sql, rotate these secrets to use ai_agent_ro.
-resource secretAcme 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'sql-connstr-acme'
+resource kvSecretsRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, identityPrincipalId, kvSecretsUserRoleId)
+  scope: keyVault
   properties: {
-    value: 'Server=tcp:${sqlServerFqdn},1433;Initial Catalog=db-acme;Persist Security Info=False;User ID=${sqlAdminLogin};Password=${sqlAdminPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalId: identityPrincipalId
+    principalType: 'ServicePrincipal'
   }
 }
 
-resource secretNova 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'sql-connstr-nova'
-  properties: {
-    value: 'Server=tcp:${sqlServerFqdn},1433;Initial Catalog=db-nova;Persist Security Info=False;User ID=${sqlAdminLogin};Password=${sqlAdminPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
+// SQL connection string secrets for each tenant database
+resource sqlSecrets 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = [
+  for dbName in sqlDatabaseNames: {
+    parent: keyVault
+    name: 'sql-connstr-${dbName}'
+    properties: {
+      value: 'Server=tcp:${sqlServerFqdn},1433;Database=${dbName};Authentication=Active Directory Managed Identity;Encrypt=True;TrustServerCertificate=False;'
+    }
   }
-}
-
-resource secretApex 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'sql-connstr-apex'
-  properties: {
-    value: 'Server=tcp:${sqlServerFqdn},1433;Initial Catalog=db-apex;Persist Security Info=False;User ID=${sqlAdminLogin};Password=${sqlAdminPassword};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
-  }
-}
-
-// ── Outputs ───────────────────────────────────────────────────────────────────
+]
 
 output keyVaultName string = keyVault.name
 output keyVaultUri string = keyVault.properties.vaultUri

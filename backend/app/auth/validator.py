@@ -1,110 +1,127 @@
 from __future__ import annotations
 
-import logging
 import time
-from typing import Any
+import uuid
+from dataclasses import dataclass
 
 import httpx
-from jose import jwt, JWTError, ExpiredSignatureError
+import structlog
+from fastapi import Depends, HTTPException, Request, status
+from jose import JWTError, jwt
 
-from app.config import get_settings
+from app.auth.rbac import resolve_tenant
+from app.config import settings
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
-# JWKS are cached in-process with a 24-hour TTL.
-_jwks_cache: dict[str, Any] | None = None
-_jwks_fetched_at: float = 0.0
-_JWKS_TTL_SECONDS = 86400  # 24 hours
+# ── JWKS cache ───────────────────────────────────────────────────────
+_jwks_cache: dict | None = None
+_jwks_cache_ts: float = 0.0
+_JWKS_TTL_SECONDS: float = 86_400  # 24 h
 
 
-def _get_jwks() -> dict[str, Any]:
-    """Fetch (and cache) the JWKS from Entra ID."""
-    global _jwks_cache, _jwks_fetched_at
+async def _fetch_jwks() -> dict:
+    """Download the JWKS key set from Entra ID."""
+    global _jwks_cache, _jwks_cache_ts  # noqa: PLW0603
 
     now = time.monotonic()
-    if _jwks_cache is not None and (now - _jwks_fetched_at) < _JWKS_TTL_SECONDS:
+    if _jwks_cache is not None and (now - _jwks_cache_ts) < _JWKS_TTL_SECONDS:
         return _jwks_cache
 
-    settings = get_settings()
-    tenant_id = settings.jwt_tenant_id
-    jwks_url = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
+    url = (
+        f"https://login.microsoftonline.com/"
+        f"{settings.azure_tenant_id}/discovery/v2.0/keys"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            _jwks_cache = resp.json()
+            _jwks_cache_ts = now
+            logger.info("jwks_refreshed", tenant_id=settings.azure_tenant_id)
+            return _jwks_cache
+    except Exception:
+        logger.warning("jwks_fetch_failed", tenant_id=settings.azure_tenant_id)
+        if _jwks_cache is not None:
+            return _jwks_cache  # return stale cache
+        raise
 
-    logger.info("Fetching JWKS from %s", jwks_url)
-    with httpx.Client(timeout=10) as client:
-        response = client.get(jwks_url)
-        response.raise_for_status()
-        _jwks_cache = response.json()
-        _jwks_fetched_at = now
 
-    return _jwks_cache
+def _get_signing_key(jwks: dict, token: str) -> dict:
+    """Find the signing key that matches the token's kid header."""
+    unverified_header = jwt.get_unverified_header(token)
+    kid = unverified_header.get("kid")
+    for key in jwks.get("keys", []):
+        if key.get("kid") == kid:
+            return key
+    raise JWTError("No matching signing key found")
 
 
-def validate_token(token: str) -> dict[str, Any]:
-    """Validate an Entra ID JWT and return the decoded claims dict.
+# ── AuthContext ──────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class AuthContext:
+    user_id: str  # oid
+    username: str  # preferred_username
+    tenant_id: str  # resolved from roles
+    roles: frozenset[str]
+    request_id: str
 
-    Validates:
-    - Signature (against Entra ID JWKS)
-    - Issuer (tenant-specific v2.0 issuer)
-    - Audience (must match AZURE_CLIENT_ID)
-    - Expiry
 
-    Args:
-        token: Raw Bearer token string.
+# ── FastAPI dependency ───────────────────────────────────────────────
+async def get_auth_context(request: Request) -> AuthContext:
+    """Validate the Bearer JWT and return an AuthContext."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
 
-    Returns:
-        Decoded JWT claims as a dict.
-
-    Raises:
-        ValueError: If the token is invalid, expired, or cannot be verified.
-    """
-    settings = get_settings()
-    tenant_id = settings.jwt_tenant_id
-    client_id = settings.jwt_audience
-
-    expected_issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
+    token = auth_header[7:]
+    request_id = str(uuid.uuid4())
 
     try:
-        # Decode header to find key ID
-        unverified_header = jwt.get_unverified_header(token)
-        kid = unverified_header.get("kid")
-        if not kid:
-            raise ValueError("Token header missing 'kid'.")
+        jwks = await _fetch_jwks()
+        signing_key = _get_signing_key(jwks, token)
 
-        jwks = _get_jwks()
-        # Find the matching key
-        signing_key: dict | None = None
-        for key in jwks.get("keys", []):
-            if key.get("kid") == kid:
-                signing_key = key
-                break
+        issuer = (
+            f"https://login.microsoftonline.com/"
+            f"{settings.azure_tenant_id}/v2.0"
+        )
 
-        if signing_key is None:
-            # Key not found — cache may be stale; force refresh once
-            logger.info("kid '%s' not found in JWKS cache — forcing refresh", kid)
-            global _jwks_fetched_at
-            _jwks_fetched_at = 0.0
-            jwks = _get_jwks()
-            for key in jwks.get("keys", []):
-                if key.get("kid") == kid:
-                    signing_key = key
-                    break
-
-        if signing_key is None:
-            raise ValueError(f"No JWKS key found for kid '{kid}'.")
-
-        claims = jwt.decode(
+        payload = jwt.decode(
             token,
             signing_key,
             algorithms=["RS256"],
-            audience=client_id,
-            issuer=expected_issuer,
-            options={"verify_exp": True},
+            audience=settings.azure_client_id,
+            issuer=issuer,
         )
-        return claims
+    except JWTError:
+        logger.warning("jwt_validation_failed", request_id=request_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+    except Exception:
+        logger.warning("auth_error", request_id=request_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed",
+        )
 
-    except ExpiredSignatureError as exc:
-        raise ValueError("Token has expired.") from exc
-    except JWTError as exc:
-        raise ValueError(f"Token validation failed: {exc}") from exc
-    except Exception as exc:
-        raise ValueError(f"Unexpected error validating token: {exc}") from exc
+    roles = payload.get("roles", [])
+    try:
+        resolved_tenant = resolve_tenant(roles)
+    except PermissionError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+
+    return AuthContext(
+        user_id=payload.get("oid", ""),
+        username=payload.get("preferred_username", ""),
+        tenant_id=resolved_tenant,
+        roles=frozenset(roles),
+        request_id=request_id,
+    )

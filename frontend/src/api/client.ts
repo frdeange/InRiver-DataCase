@@ -1,34 +1,27 @@
-import axios from "axios"
-import type { AxiosInstance, InternalAxiosRequestConfig } from "axios"
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
-const BASE_URL: string = (import.meta.env.VITE_API_URL as string | undefined) ?? ""
+export async function apiRequest<T>(
+  path: string,
+  options: RequestInit & { token?: string } = {}
+): Promise<T> {
+  const { token, ...fetchOptions } = options;
+  const headers = new Headers(fetchOptions.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Content-Type", "application/json");
 
-let tokenGetter: (() => Promise<string>) | null = null
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...fetchOptions,
+    headers,
+  });
 
-export function setTokenGetter(getter: () => Promise<string>) {
-  tokenGetter = getter
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ message: "Request failed" }));
+    throw new Error(
+      error.message || error.detail || `HTTP ${response.status}`
+    );
+  }
+
+  return response.json();
 }
-
-const client: AxiosInstance = axios.create({
-  baseURL: BASE_URL,
-})
-
-client.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
-  if (tokenGetter) {
-    const token = await tokenGetter()
-    config.headers.set("Authorization", `Bearer ${token}`)
-  }
-  return config
-})
-
-client.interceptors.response.use(
-  (response) => response,
-  (error: unknown) => {
-    if ((error as { response?: { status?: number } }).response?.status === 401) {
-      window.location.href = "/login"
-    }
-    return Promise.reject(error)
-  }
-)
-
-export default client

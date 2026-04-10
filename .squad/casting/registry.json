@@ -1,45 +1,45 @@
 {
   "agents": {
-    "danny": {
-      "created_at": "2026-04-09T11:46:58.666Z",
-      "persistent_name": "Danny",
-      "universe": "Ocean's Eleven",
+    "solution-architect": {
+      "persistent_name": "Neo",
+      "universe": "The Matrix",
+      "created_at": "2026-04-09T00:00:00Z",
+      "legacy_named": false,
       "status": "active"
     },
-    "rusty": {
-      "created_at": "2026-04-09T11:46:58.666Z",
-      "persistent_name": "Rusty",
-      "universe": "Ocean's Eleven",
+    "lead-frontend": {
+      "persistent_name": "Trinity",
+      "universe": "The Matrix",
+      "created_at": "2026-04-09T00:00:00Z",
+      "legacy_named": false,
       "status": "active"
     },
-    "linus": {
-      "created_at": "2026-04-09T11:46:58.666Z",
-      "persistent_name": "Linus",
-      "universe": "Ocean's Eleven",
+    "lead-backend": {
+      "persistent_name": "Morpheus",
+      "universe": "The Matrix",
+      "created_at": "2026-04-09T00:00:00Z",
+      "legacy_named": false,
       "status": "active"
     },
-    "basher": {
-      "created_at": "2026-04-09T11:46:58.666Z",
-      "persistent_name": "Basher",
-      "universe": "Ocean's Eleven",
+    "ai-orchestration": {
+      "persistent_name": "Oracle",
+      "universe": "The Matrix",
+      "created_at": "2026-04-09T00:00:00Z",
+      "legacy_named": false,
       "status": "active"
     },
-    "livingston": {
-      "created_at": "2026-04-09T11:46:58.666Z",
-      "persistent_name": "Livingston",
-      "universe": "Ocean's Eleven",
+    "cloud-platform": {
+      "persistent_name": "Tank",
+      "universe": "The Matrix",
+      "created_at": "2026-04-09T00:00:00Z",
+      "legacy_named": false,
       "status": "active"
     },
-    "scribe": {
-      "created_at": "2026-04-09T11:46:58.666Z",
-      "persistent_name": "Scribe",
-      "universe": "Ocean's Eleven",
-      "status": "active"
-    },
-    "ralph": {
-      "created_at": "2026-04-09T11:46:58.666Z",
-      "persistent_name": "Ralph",
-      "universe": "Ocean's Eleven",
+    "security": {
+      "persistent_name": "Niobe",
+      "universe": "The Matrix",
+      "created_at": "2026-04-09T00:00:00Z",
+      "legacy_named": false,
       "status": "active"
     }
   }

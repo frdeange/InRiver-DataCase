@@ -1,87 +1,45 @@
-import { useState, useCallback } from 'react'
-import { useMsal } from '@azure/msal-react'
-import { InteractionStatus } from '@azure/msal-browser'
-import { isDemoMode, loginRequest, apiRequest, msalInstance } from './msalConfig'
+import { useMsal } from "@azure/msal-react";
+import { InteractionRequiredAuthError } from "@azure/msal-browser";
+import { loginRequest, apiScope } from "./msalConfig";
 
-export interface AuthState {
-  user: string | null
-  isAuthenticated: boolean
-  login: () => void
-  logout: () => void
-  getAccessToken: () => Promise<string | null>
-  isLoading: boolean
-}
+export function useAuth() {
+  const { instance, accounts } = useMsal();
+  const account = accounts[0] ?? null;
 
-const DEMO_USERS = ['alice@demo.com', 'bob@demo.com', 'admin@demo.com']
-const DEMO_USER_KEY = 'demo_user'
+  const isAuthenticated = accounts.length > 0;
 
-function useDemoAuth(): AuthState {
-  const [user, setUser] = useState<string | null>(() => {
-    return localStorage.getItem(DEMO_USER_KEY)
-  })
+  const user = account
+    ? {
+        name: account.name ?? "Unknown",
+        email: account.username ?? "",
+      }
+    : null;
 
-  const login = useCallback(() => {
-    const stored = localStorage.getItem(DEMO_USER_KEY) ?? DEMO_USERS[0]
-    localStorage.setItem(DEMO_USER_KEY, stored)
-    setUser(stored)
-  }, [])
+  async function acquireToken(): Promise<string> {
+    if (!account) throw new Error("No authenticated account");
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(DEMO_USER_KEY)
-    setUser(null)
-  }, [])
-
-  const getAccessToken = useCallback(async (): Promise<string | null> => {
-    return null
-  }, [])
-
-  return {
-    user,
-    isAuthenticated: user !== null,
-    login,
-    logout,
-    getAccessToken,
-    isLoading: false,
-  }
-}
-
-function useMsalAuth(): AuthState {
-  const { instance, accounts, inProgress } = useMsal()
-  const account = accounts[0] ?? null
-  const user = account?.username ?? null
-  const apiScope = (import.meta.env.VITE_API_SCOPE as string | undefined) ?? ''
-
-  const login = useCallback(() => {
-    instance.loginPopup(loginRequest).catch(console.error)
-  }, [instance])
-
-  const logout = useCallback(() => {
-    instance.logoutPopup().catch(console.error)
-  }, [instance])
-
-  const getAccessToken = useCallback(async (): Promise<string | null> => {
-    if (!account) return null
     try {
       const response = await instance.acquireTokenSilent({
-        ...apiRequest(apiScope),
+        scopes: [apiScope],
         account,
-      })
-      return response.accessToken
-    } catch {
-      return null
+      });
+      return response.accessToken;
+    } catch (error) {
+      if (error instanceof InteractionRequiredAuthError) {
+        await instance.acquireTokenRedirect({ scopes: [apiScope] });
+        throw new Error("Redirecting for authentication...");
+      }
+      throw error;
     }
-  }, [instance, account, apiScope])
-
-  return {
-    user,
-    isAuthenticated: !!account,
-    login,
-    logout,
-    getAccessToken,
-    isLoading: inProgress !== InteractionStatus.None,
   }
-}
 
-export const useAuth: () => AuthState = isDemoMode ? useDemoAuth : useMsalAuth
-export { DEMO_USERS, DEMO_USER_KEY }
-export { msalInstance }
+  function login() {
+    instance.loginRedirect(loginRequest);
+  }
+
+  function logout() {
+    instance.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
+  }
+
+  return { isAuthenticated, user, acquireToken, login, logout };
+}

@@ -6,12 +6,15 @@ How to decide who handles what.
 
 | Work Type | Route To | Examples |
 |-----------|----------|----------|
-| {domain 1} | {Name} | {example tasks} |
-| {domain 2} | {Name} | {example tasks} |
-| {domain 3} | {Name} | {example tasks} |
-| Code review | {Name} | Review PRs, check quality, suggest improvements |
-| Testing | {Name} | Write tests, find edge cases, verify fixes |
-| Scope & priorities | {Name} | What to build next, trade-offs, decisions |
+| Architecture, system design, component boundaries | Neo | End-to-end design, contracts, trade-offs |
+| Frontend, UI, React, MSAL auth | Trinity | Chat interface, login flow, components |
+| Backend, API, FastAPI, data access | Morpheus | API endpoints, SQL guardrails, DAL |
+| Agent design, orchestration, AI models, prompts | Oracle | Multi-agent architecture, Semantic Kernel, prompt safety |
+| Azure infra, Container Apps, ACR, SQL servers, IaC | Tank | Bicep/Terraform, deployments, networking |
+| Security, identity flow, tenant isolation, SQL injection | Niobe | AuthZ model, threat model, security review |
+| Architecture review, design approval | Neo | Review PRs, approve/reject designs |
+| Security review | Niobe | Review security-sensitive work |
+| Scope & priorities | Neo | What to build next, trade-offs, decisions |
 | Session logging | Scribe | Automatic — never needs routing |
 
 ## Issue Routing
@@ -37,14 +40,3 @@ How to decide who handles what.
 5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
 6. **Anticipate downstream work.** If a feature is being built, spawn the tester to write test cases from requirements simultaneously.
 7. **Issue-labeled work** — when a `squad:{member}` label is applied to an issue, route to that member. The Lead handles all `squad` (base label) triage.
-
-## Work Type → Agent
-
-| Work Type | Primary | Secondary |
-|-----------|---------|----------|
-| Architecture, Azure design | Danny | — |
-| API, SQL engine, permissions | Rusty | — |
-| Guardrails, prompt safety, RBAC | Linus | — |
-| Web UI, authentication | Basher | — |
-| Azure infra, DevContainer setup | Livingston | — |
-

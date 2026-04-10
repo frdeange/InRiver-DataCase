@@ -12,15 +12,20 @@
 
 | Name | Role | Charter | Status |
 |------|------|---------|--------|
-| Danny | Lead | `.squad/agents/danny/charter.md` | ✅ Active |
-| Rusty | Backend Dev | `.squad/agents/rusty/charter.md` | ✅ Active |
-| Linus | AI & Security | `.squad/agents/linus/charter.md` | ✅ Active |
-| Basher | Frontend Dev | `.squad/agents/basher/charter.md` | ✅ Active |
-| Livingston | DevOps | `.squad/agents/livingston/charter.md` | ✅ Active |
-| Scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Silent |
-| Ralph | Work Monitor | `.squad/agents/ralph/charter.md` | 🔄 Monitor |
+| Neo | Solution Architect | .squad/agents/neo/charter.md | 🏗️ Lead |
+| Trinity | Lead Frontend Engineer | .squad/agents/trinity/charter.md | ⚛️ Frontend |
+| Morpheus | Lead Backend Engineer | .squad/agents/morpheus/charter.md | 🔧 Backend |
+| Oracle | AI/Agent Orchestration Engineer | .squad/agents/oracle/charter.md | 🤖 AI/Agents |
+| Tank | Cloud Platform Engineer | .squad/agents/tank/charter.md | ⚙️ Platform |
+| Niobe | Security Engineer | .squad/agents/niobe/charter.md | 🔒 Security |
+| Scribe | Scribe | .squad/agents/scribe/charter.md | 📋 Scribe |
+| Ralph | Work Monitor | .squad/agents/ralph/charter.md | 🔄 Monitor |
 
 ## Project Context
 
-- **Project:** InRiver-DataCase
+- **Project:** InRiver-DataCase — AI-powered natural-language query interface for InRiver PIM databases
+- **User:** Kiko de Angel
 - **Created:** 2026-04-09
+- **Stack:** React SPA (MSAL, Tailwind), FastAPI, Azure SQL, Azure Container Apps, Microsoft Agent Framework
+- **Azure RG:** RG-InRiver (AI Foundry, App Insights, Log Analytics, Storage Account)
+- **Universe:** The Matrix
