@@ -17,11 +17,14 @@ declare -A TENANT_SEEDS=(
     ["db-apex"]="seed-apex.sql"
 )
 
-# Use Azure AD authentication via az cli token
-echo "Acquiring Azure AD access token for SQL..."
-ACCESS_TOKEN=$(az account get-access-token \
-    --resource https://database.windows.net/ \
-    --query accessToken -o tsv)
+# Use the Go-based sqlcmd with Azure AD authentication.
+# Requires: go-sqlcmd (install via: curl from github.com/microsoft/go-sqlcmd)
+# Falls back to /usr/local/bin/sqlcmd if mssql-tools18 sqlcmd is first in PATH.
+SQLCMD="/usr/local/bin/sqlcmd"
+if [[ ! -x "${SQLCMD}" ]]; then
+    SQLCMD="sqlcmd"
+fi
+echo "Using sqlcmd: $(${SQLCMD} --version 2>/dev/null | head -1 || echo 'unknown')"
 
 for DB_NAME in "${!TENANT_SEEDS[@]}"; do
     SEED_FILE="${TENANT_SEEDS[$DB_NAME]}"
@@ -33,21 +36,19 @@ for DB_NAME in "${!TENANT_SEEDS[@]}"; do
 
     # Apply schema
     echo "  Applying schema.sql..."
-    sqlcmd \
+    "${SQLCMD}" \
         -S "tcp:${SQL_SERVER},1433" \
         -d "${DB_NAME}" \
-        -G -P "${ACCESS_TOKEN}" \
-        -i "${DB_DIR}/schema.sql" \
-        -b
+        --authentication-method=ActiveDirectoryDefault \
+        -i "${DB_DIR}/schema.sql"
 
     # Apply seed data
     echo "  Applying ${SEED_FILE}..."
-    sqlcmd \
+    "${SQLCMD}" \
         -S "tcp:${SQL_SERVER},1433" \
         -d "${DB_NAME}" \
-        -G -P "${ACCESS_TOKEN}" \
-        -i "${DB_DIR}/${SEED_FILE}" \
-        -b
+        --authentication-method=ActiveDirectoryDefault \
+        -i "${DB_DIR}/${SEED_FILE}"
 
     echo "  Done: ${DB_NAME}"
 done

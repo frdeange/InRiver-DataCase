@@ -131,7 +131,7 @@ if [[ -n "${PLAN_FILE}" ]]; then
     echo -e "${BLUE}Using existing deployment plan: ${PLAN_FILE}${NC}"
 else
     # Run preflight
-    step_start "Step 1/5: Pre-flight validation"
+    step_start "Step 1/7: Pre-flight validation"
 
     PREFLIGHT_ARGS=(-g "${RESOURCE_GROUP}" -l "${LOCATION}" -e "${ENV_NAME}")
     PLAN_FILE=$(mktemp /tmp/inriver-plan-XXXXXX.json)
@@ -171,7 +171,7 @@ if [[ "${SKIP_CONFIRM}" != "true" ]]; then
 fi
 
 # ── Step 2: Ensure resource group exists ───────────────────
-step_start "Step 2/5: Ensure resource group"
+step_start "Step 2/7: Ensure resource group"
 
 if [[ "${RG_EXISTS}" == "true" ]]; then
     echo -e "  ${GREEN}♻️  Reusing existing resource group: ${RESOURCE_GROUP}${NC}"
@@ -185,7 +185,7 @@ fi
 step_done
 
 # ── Step 3: Deploy Bicep infrastructure ────────────────────
-step_start "Step 3/5: Deploy Bicep infrastructure"
+step_start "Step 3/7: Deploy Bicep infrastructure"
 
 echo -e "  ${BLUE}This may take several minutes...${NC}"
 
@@ -234,7 +234,15 @@ DEPLOY_OUTPUT=$(az deployment group create \
     --template-file "${ROOT_DIR}/infra/main.bicep" \
     "${BICEP_PARAMS[@]}" \
     --query 'properties.outputs' \
-    --output json 2>&1) || step_fail "Bicep deployment failed. Review the log for details.\n  Rollback: Resources are left in place. Re-run after fixing the template."
+    --output json 2>"${LOG_FILE}.bicep-warnings") || step_fail "Bicep deployment failed. Review the log for details.\n  Rollback: Resources are left in place. Re-run after fixing the template."
+
+# Show any Bicep warnings (non-fatal)
+if [[ -s "${LOG_FILE}.bicep-warnings" ]]; then
+    echo -e "  ${YELLOW}Bicep warnings (non-fatal):${NC}"
+    grep -v "^$" "${LOG_FILE}.bicep-warnings" | head -5 | while IFS= read -r line; do
+        echo -e "    ${line}"
+    done
+fi
 
 ACR_LOGIN_SERVER=$(echo "${DEPLOY_OUTPUT}" | jq -r '.acrLoginServer.value // empty')
 SQL_SERVER_FQDN=$(echo "${DEPLOY_OUTPUT}" | jq -r '.sqlServerFqdn.value // empty')
@@ -252,8 +260,16 @@ echo -e "  Backend:  ${BACKEND_URL:-N/A}"
 
 step_done
 
-# ── Step 4: Build and push Docker images ───────────────────
-step_start "Step 4/5: Build and push Docker images"
+# ── Step 4: Entra ID App Registrations ────────────────────
+step_start "Step 4/7: Configure Entra ID app registrations"
+
+"${SCRIPT_DIR}/setup-entra-apps.sh" -g "${RESOURCE_GROUP}" -e "${ENV_NAME}" \
+    || echo -e "  ${YELLOW}⚠  Entra ID setup had issues — review output above${NC}"
+
+step_done
+
+# ── Step 5: Build and push Docker images ───────────────────
+step_start "Step 5/7: Build and push Docker images"
 
 if [[ "${SKIP_DOCKER}" == "true" ]]; then
     echo -e "  ${YELLOW}⏭  Skipped (--skip-docker)${NC}"
@@ -289,12 +305,29 @@ else
     else
         echo -e "  ${YELLOW}SKIP: frontend/Dockerfile not found${NC}"
     fi
+
+    # Update Container Apps to use the pushed images (they start with a placeholder)
+    echo -e "  Updating Container Apps with real images..."
+    az containerapp update \
+        --name "${RESOURCE_PREFIX}-api" \
+        --resource-group "${RESOURCE_GROUP}" \
+        --image "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-api:latest" \
+        --output none 2>/dev/null \
+        && echo -e "  ${GREEN}✔${NC} Backend container updated" \
+        || echo -e "  ${YELLOW}⚠  Backend container update failed (may need manual update)${NC}"
+    az containerapp update \
+        --name "${RESOURCE_PREFIX}-frontend" \
+        --resource-group "${RESOURCE_GROUP}" \
+        --image "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-frontend:latest" \
+        --output none 2>/dev/null \
+        && echo -e "  ${GREEN}✔${NC} Frontend container updated" \
+        || echo -e "  ${YELLOW}⚠  Frontend container update failed (may need manual update)${NC}"
 fi
 
 step_done
 
 # ── Step 5: Seed databases ────────────────────────────────
-step_start "Step 5/5: Seed databases"
+step_start "Step 6/7: Seed databases"
 
 # Ensure sqlcmd is on PATH (mssql-tools18 installs to /opt/)
 for _tools_dir in /opt/mssql-tools18/bin /opt/mssql-tools/bin; do
@@ -310,6 +343,11 @@ elif [[ -z "${SQL_SERVER_FQDN}" ]]; then
 else
     "${SCRIPT_DIR}/seed-databases.sh" "${SQL_SERVER_FQDN}" \
         || step_fail "Database seeding failed. Databases exist but may be empty.\n  Re-run with: ./scripts/seed-databases.sh ${SQL_SERVER_FQDN}"
+
+    # Grant managed identity read-only access to all tenant databases
+    echo -e "  Granting managed identity SQL access..."
+    "${SCRIPT_DIR}/grant-sql-access.sh" "${SQL_SERVER_FQDN}" "${RESOURCE_PREFIX}-identity" \
+        || echo -e "  ${YELLOW}⚠  SQL access grant failed — run manually: ./scripts/grant-sql-access.sh ${SQL_SERVER_FQDN} ${RESOURCE_PREFIX}-identity${NC}"
 fi
 
 step_done

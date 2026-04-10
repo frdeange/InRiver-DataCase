@@ -79,7 +79,7 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'backend'
-          image: '${acrLoginServer}/${resourcePrefix}-api:latest'
+          image: 'mcr.microsoft.com/k8se/quickstart:latest'
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -127,7 +127,7 @@ resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       ingress: {
         external: true
-        targetPort: 3000
+        targetPort: 80
         transport: 'auto'
         allowInsecure: false
       }
@@ -142,7 +142,7 @@ resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: 'frontend'
-          image: '${acrLoginServer}/${resourcePrefix}-frontend:latest'
+          image: 'mcr.microsoft.com/k8se/quickstart:latest'
           resources: {
             cpu: json('0.25')
             memory: '0.5Gi'
