@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import sqlglot
+from agent_framework import tool
 from sqlglot.errors import ParseError
 
 
@@ -23,6 +24,7 @@ FORBIDDEN_TYPES = {
 }
 
 
+@tool(description="Validate that a SQL query is a safe SELECT-only statement. Returns JSON with valid (bool) and reason.")
 def validate_sql(sql: str) -> str:
     """Validate that *sql* is a safe SELECT-only statement.
 

@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import re
 
+from agent_framework import tool
 
+
+@tool(description="Execute a validated SQL SELECT query against a tenant database. Returns JSON with columns and rows.")
 def execute_sql(sql: str, database: str) -> str:
     """Execute validated SQL against the tenant database.
 

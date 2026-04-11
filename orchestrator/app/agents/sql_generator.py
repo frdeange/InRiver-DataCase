@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.tools.schema_provider import get_schema
+from app.tools.sql_executor import execute_sql
 from app.tools.sql_validator import validate_sql
 
 AGENT_NAME = "inriver-sql-generator"
@@ -32,5 +33,5 @@ def create_sql_generator_agent(project_endpoint: str):  # noqa: ANN201
     return FoundryAgent(
         project_endpoint=project_endpoint,
         agent_name=AGENT_NAME,
-        tools=[get_schema, validate_sql],
+        tools=[get_schema, validate_sql, execute_sql],
     )

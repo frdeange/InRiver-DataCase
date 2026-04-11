@@ -184,7 +184,7 @@ class MockPipeline(BasePipeline):
 
 
 class RealPipeline(BasePipeline):
-    """Production pipeline using FoundryAgent + HandoffBuilder."""
+    """Production pipeline using FoundryAgent + HandoffBuilder → Workflow."""
 
     def __init__(self) -> None:
         from agent_framework.orchestrations import HandoffBuilder
@@ -199,9 +199,15 @@ class RealPipeline(BasePipeline):
         self._sql_gen = create_sql_generator_agent(endpoint)
         self._formatter = create_formatter_agent(endpoint)
 
-        self._orchestrator = HandoffBuilder(
-            name="inriver-orchestrator",
-            participants=[self._safety, self._sql_gen, self._formatter],
+        # Build the workflow using the fluent HandoffBuilder API:
+        # Safety screens input → hands off to SQLGenerator → hands off to Formatter
+        self._workflow = (
+            HandoffBuilder()
+            .participants([self._safety, self._sql_gen, self._formatter])
+            .with_start_agent(self._safety)
+            .add_handoff(self._safety, [self._sql_gen], description="Pass safe queries to SQL generation")
+            .add_handoff(self._sql_gen, [self._formatter], description="Pass SQL results to response formatting")
+            .build()
         )
 
     async def run(
@@ -215,15 +221,46 @@ class RealPipeline(BasePipeline):
             f"Schema:\n{schema}\n"
         )
 
-        result = await self._orchestrator.run(prompt)  # type: ignore[attr-defined]
+        try:
+            result = await self._workflow.run(prompt)
 
-        elapsed = (time.perf_counter() - start) * 1000
-        return PipelineResult(
-            answer=str(result),
-            sql="",
-            database=database,
-            execution_time_ms=elapsed,
-        )
+            # Extract outputs from WorkflowRunResult
+            outputs = result.get_outputs()
+            answer = ""
+            sql = ""
+
+            if outputs:
+                # The last agent's output is the formatted response
+                last_output = outputs[-1] if isinstance(outputs, list) else outputs
+                answer = str(last_output)
+
+            # Try to extract SQL from intermediate outputs
+            for event in result:
+                event_str = str(event)
+                if "SELECT" in event_str.upper() and "FROM" in event_str.upper():
+                    # Found a SQL-like string in the pipeline events
+                    for line in event_str.split("\n"):
+                        stripped = line.strip()
+                        if stripped.upper().startswith("SELECT"):
+                            sql = stripped
+                            break
+
+            elapsed = (time.perf_counter() - start) * 1000
+            return PipelineResult(
+                answer=answer or "The query was processed but no response was generated.",
+                sql=sql,
+                database=database,
+                execution_time_ms=elapsed,
+            )
+        except Exception as exc:
+            elapsed = (time.perf_counter() - start) * 1000
+            return PipelineResult(
+                answer=f"Pipeline error: {exc}",
+                sql="",
+                database=database,
+                execution_time_ms=elapsed,
+                error=str(exc),
+            )
 
 
 # ---------------------------------------------------------------------------
