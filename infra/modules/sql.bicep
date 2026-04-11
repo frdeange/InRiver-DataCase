@@ -21,7 +21,7 @@ param entraAdminDisplayName string = 'SQL Admins'
 param entraAdminPrincipalType string = 'User'
 
 var sqlServerName = '${resourcePrefix}-sql'
-var databases = ['db-acme', 'db-nova', 'db-apex']
+var databases = ['db-acme', 'db-nova', 'db-apex', 'db-users']
 
 resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
   name: sqlServerName

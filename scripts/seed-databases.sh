@@ -53,5 +53,27 @@ for DB_NAME in "${!TENANT_SEEDS[@]}"; do
     echo "  Done: ${DB_NAME}"
 done
 
+# Seed the users database
+echo ""
+echo "=========================================="
+echo " Database: db-users"
+echo "=========================================="
+
+echo "  Applying users-schema.sql..."
+"${SQLCMD}" \
+    -S "tcp:${SQL_SERVER},1433" \
+    -d "db-users" \
+    --authentication-method=ActiveDirectoryDefault \
+    -i "${DB_DIR}/users-schema.sql"
+
+echo "  Applying seed-users.sql..."
+"${SQLCMD}" \
+    -S "tcp:${SQL_SERVER},1433" \
+    -d "db-users" \
+    --authentication-method=ActiveDirectoryDefault \
+    -i "${DB_DIR}/seed-users.sql"
+
+echo "  Done: db-users"
+
 echo ""
 echo "All databases seeded successfully."

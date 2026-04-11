@@ -268,8 +268,20 @@ step_start "Step 4/7: Configure Entra ID app registrations"
 
 step_done
 
+# ── Step 4b: Provision AI Agents ──────────────────────────
+step_start "Step 4b/8: Provision AI Agents in Foundry"
+
+if [[ -f "${SCRIPT_DIR}/setup-agents.py" ]]; then
+    python3 "${SCRIPT_DIR}/setup-agents.py" \
+        || echo -e "  ${YELLOW}⚠  Agent provisioning had issues — review output above${NC}"
+else
+    echo -e "  ${YELLOW}⏭  Skipped (scripts/setup-agents.py not found)${NC}"
+fi
+
+step_done
+
 # ── Step 5: Build and push Docker images ───────────────────
-step_start "Step 5/7: Build and push Docker images"
+step_start "Step 5/8: Build and push Docker images"
 
 if [[ "${SKIP_DOCKER}" == "true" ]]; then
     echo -e "  ${YELLOW}⏭  Skipped (--skip-docker)${NC}"
@@ -306,6 +318,18 @@ else
         echo -e "  ${YELLOW}SKIP: frontend/Dockerfile not found${NC}"
     fi
 
+    # Orchestrator
+    if [[ -f "${ROOT_DIR}/orchestrator/Dockerfile" ]]; then
+        echo -e "  Building orchestrator image..."
+        docker build -t "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-orchestrator:latest" "${ROOT_DIR}/orchestrator" \
+            || step_fail "Orchestrator Docker build failed."
+        echo -e "  Pushing orchestrator image..."
+        docker push "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-orchestrator:latest" \
+            || step_fail "Orchestrator Docker push failed."
+    else
+        echo -e "  ${YELLOW}SKIP: orchestrator/Dockerfile not found${NC}"
+    fi
+
     # Update Container Apps to use the pushed images (they start with a placeholder)
     echo -e "  Updating Container Apps with real images..."
     az containerapp update \
@@ -322,6 +346,13 @@ else
         --output none 2>/dev/null \
         && echo -e "  ${GREEN}✔${NC} Frontend container updated" \
         || echo -e "  ${YELLOW}⚠  Frontend container update failed (may need manual update)${NC}"
+    az containerapp update \
+        --name "${RESOURCE_PREFIX}-orchestrator" \
+        --resource-group "${RESOURCE_GROUP}" \
+        --image "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-orchestrator:latest" \
+        --output none 2>/dev/null \
+        && echo -e "  ${GREEN}✔${NC} Orchestrator container updated" \
+        || echo -e "  ${YELLOW}⚠  Orchestrator container update failed (may need manual update)${NC}"
 fi
 
 step_done

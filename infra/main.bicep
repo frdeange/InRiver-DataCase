@@ -170,6 +170,7 @@ output acrLoginServer string = acr.outputs.loginServer
 output sqlServerFqdn string = sql.outputs.sqlServerFqdn
 output frontendUrl string = containerApps.outputs.frontendUrl
 output backendUrl string = containerApps.outputs.backendUrl
+output orchestratorUrl string = containerApps.outputs.orchestratorUrl
 output keyVaultName string = keyvault.outputs.keyVaultName
 output identityClientId string = identity.outputs.clientId
 output appInsightsConnectionString string = monitoring.outputs.appInsightsConnectionString

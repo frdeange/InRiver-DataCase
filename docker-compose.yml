@@ -5,7 +5,18 @@ services:
     ports:
       - "8000:8000"
     env_file: ./backend/.env
-    depends_on: []
+    environment:
+      - ORCHESTRATOR_URL=http://orchestrator:8001
+    depends_on:
+      - orchestrator
+
+  orchestrator:
+    build: ./orchestrator
+    ports:
+      - "8001:8001"
+    env_file: ./orchestrator/.env
+    environment:
+      - BACKEND_URL=http://backend:8000
 
   frontend:
     build: ./frontend

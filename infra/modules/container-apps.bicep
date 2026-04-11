@@ -163,6 +163,70 @@ resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// Orchestrator
+resource orchestratorApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${resourcePrefix}-orchestrator'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identityId}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerAppEnv.id
+    configuration: {
+      ingress: {
+        external: false
+        targetPort: 8001
+        transport: 'auto'
+        allowInsecure: false
+      }
+      registries: [
+        {
+          server: acrLoginServer
+          identity: identityId
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'orchestrator'
+          image: 'mcr.microsoft.com/k8se/quickstart:latest'
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: identityClientId
+            }
+            {
+              name: 'AZURE_KEYVAULT_NAME'
+              value: keyVaultName
+            }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsightsConnectionString
+            }
+            {
+              name: 'AZURE_AI_PROJECT_ENDPOINT'
+              value: aiProjectEndpoint
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 0
+        maxReplicas: 3
+      }
+    }
+  }
+}
+
 output frontendUrl string = 'https://${frontendApp.properties.configuration.ingress.fqdn}'
 output backendUrl string = 'https://${backendApp.properties.configuration.ingress.fqdn}'
+output orchestratorUrl string = 'https://${orchestratorApp.properties.configuration.ingress.fqdn}'
 output environmentId string = containerAppEnv.id
