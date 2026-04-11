@@ -7,7 +7,10 @@ from app.auth.service import MOCK_USERS, decode_token
 domain_resolver = DomainResolver()
 
 
-async def get_current_user(authorization: str = Header()) -> UserInfo:
+async def get_current_user(authorization: str | None = Header(default=None)) -> UserInfo:
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header required")
+
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
 

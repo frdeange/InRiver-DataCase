@@ -9,7 +9,11 @@ class Settings(BaseSettings):
     ORCHESTRATOR_URL: str = "http://localhost:8001"
     SQL_SERVER: str = "inriver-dev-sql.database.windows.net"
     USE_MOCK_DB: bool = True
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://inriver-dev-frontend.delightfulwave-828d7585.swedencentral.azurecontainerapps.io",
+    ]
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
