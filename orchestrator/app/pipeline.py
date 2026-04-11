@@ -276,11 +276,19 @@ _pipeline: BasePipeline | None = None
 
 
 def get_pipeline() -> BasePipeline:
-    """Return a pipeline instance (mock or real) based on config."""
+    """Return a pipeline instance based on config.
+
+    USE_REAL_AGENTS=false → MockPipeline (pattern-matching SQL, works without AI Foundry)
+    USE_REAL_AGENTS=true  → RealPipeline (FoundryAgent + HandoffBuilder)
+
+    Both modes respect USE_MOCK_DB for SQL execution:
+    USE_MOCK_DB=false → real Azure SQL queries
+    USE_MOCK_DB=true  → hardcoded sample data
+    """
     global _pipeline  # noqa: PLW0603
     if _pipeline is None:
-        if settings.USE_MOCK_DB:
-            _pipeline = MockPipeline()
-        else:
+        if settings.USE_REAL_AGENTS:
             _pipeline = RealPipeline()
+        else:
+            _pipeline = MockPipeline()
     return _pipeline

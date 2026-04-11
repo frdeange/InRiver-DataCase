@@ -7,6 +7,7 @@ agent-framework==1.0.1
 agent-framework-foundry==1.0.1
 azure-ai-projects==2.0.1
 azure-identity==1.23.0
+pyodbc==5.2.0
 sqlglot==26.32.0
 httpx==0.28.1
 pytest==8.4.0
