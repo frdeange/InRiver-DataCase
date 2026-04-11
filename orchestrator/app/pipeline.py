@@ -23,6 +23,8 @@ class PipelineResult:
     sql: str
     database: str
     execution_time_ms: float
+    columns: list[str] | None = None
+    rows: list[list] | None = None
     safe: bool = True
     error: str | None = None
 
@@ -165,6 +167,7 @@ class MockPipeline(BasePipeline):
 
         # Step 4: Execution
         raw_data = execute_sql(sql, database)
+        parsed_data = json.loads(raw_data)
 
         # Step 5: Formatting
         answer = self._format_response(question, sql, raw_data)
@@ -175,6 +178,8 @@ class MockPipeline(BasePipeline):
             sql=sql,
             database=database,
             execution_time_ms=elapsed,
+            columns=parsed_data.get("columns"),
+            rows=parsed_data.get("rows"),
         )
 
 

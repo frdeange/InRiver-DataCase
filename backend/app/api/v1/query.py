@@ -91,11 +91,18 @@ async def execute_query(
                         answer=f"Query rejected: {reason}",
                     )
 
+            # Convert array rows to dicts if columns are present
+            columns = data.get("columns")
+            raw_rows = data.get("rows") or data.get("results")
+            rows = raw_rows
+            if columns and raw_rows and isinstance(raw_rows[0], list):
+                rows = [dict(zip(columns, row)) for row in raw_rows]
+
             return QueryResponse(
                 database=target_db,
                 sql=data.get("sql"),
-                columns=data.get("columns"),
-                rows=data.get("rows") or data.get("results"),
+                columns=columns,
+                rows=rows,
                 answer=data.get("answer", ""),
                 execution_time_ms=data.get("execution_time_ms", 0),
             )

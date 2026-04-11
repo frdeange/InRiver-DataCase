@@ -43,6 +43,8 @@ class QueryResponse(BaseModel):
     sql: str
     database: str
     execution_time_ms: float
+    columns: list[str] | None = None
+    rows: list | None = None
 
 
 # -- Routes -------------------------------------------------------------------
@@ -78,4 +80,6 @@ async def process_query(request: QueryRequest) -> QueryResponse:
         sql=result.sql,
         database=result.database,
         execution_time_ms=round(result.execution_time_ms, 2),
+        columns=result.columns,
+        rows=result.rows,
     )
