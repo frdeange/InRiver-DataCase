@@ -27,11 +27,12 @@ class QueryRequest(BaseModel):
 
 
 class QueryResponse(BaseModel):
-    question: str
-    database: str
-    sql: str | None = None
-    results: list[dict[str, Any]] | None = None
     answer: str | None = None
+    sql: str | None = None
+    database: str
+    execution_time_ms: float = 0
+    columns: list[str] | None = None
+    rows: list[dict[str, Any]] | None = None
     error: str | None = None
 
 
@@ -85,33 +86,36 @@ async def execute_query(
                 )
                 if not is_valid:
                     return QueryResponse(
-                        question=request.question,
                         database=target_db,
                         error=f"Query rejected: {reason}",
+                        answer=f"Query rejected: {reason}",
                     )
 
             return QueryResponse(
-                question=request.question,
                 database=target_db,
                 sql=data.get("sql"),
-                results=data.get("results"),
-                answer=data.get("answer"),
+                columns=data.get("columns"),
+                rows=data.get("rows") or data.get("results"),
+                answer=data.get("answer", ""),
+                execution_time_ms=data.get("execution_time_ms", 0),
             )
 
     except httpx.HTTPError:
         logger.warning("orchestrator_unavailable", url=settings.ORCHESTRATOR_URL)
         # Mock fallback
+        mock_rows = [
+            {"ProductName": "Widget Pro", "ListPrice": 29.99},
+            {"ProductName": "Gadget Elite", "ListPrice": 49.99},
+            {"ProductName": "Sensor Max", "ListPrice": 19.99},
+        ]
         return QueryResponse(
-            question=request.question,
             database=target_db,
             sql="SELECT TOP 10 ProductName, ListPrice FROM Products WHERE IsActive = 1",
-            results=[
-                {"ProductName": "Widget Pro", "ListPrice": 29.99},
-                {"ProductName": "Gadget Elite", "ListPrice": 49.99},
-                {"ProductName": "Sensor Max", "ListPrice": 19.99},
-            ],
+            columns=["ProductName", "ListPrice"],
+            rows=mock_rows,
             answer=(
                 "Here are the top products from your catalog. "
                 "(Mock response — orchestrator is not available)"
             ),
+            execution_time_ms=0,
         )

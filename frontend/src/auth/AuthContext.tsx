@@ -5,10 +5,12 @@ import { login as apiLogin, getDatabases, clearTokens, getAccessToken } from '..
 interface AuthContextType {
   user: UserInfo | null;
   databases: DatabaseInfo[];
+  selectedDatabase: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  selectDatabase: (dbName: string) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -16,6 +18,7 @@ export const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [databases, setDatabases] = useState<DatabaseInfo[]>([]);
+  const [selectedDatabase, setSelectedDatabase] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const isAuthenticated = !!user;
 
@@ -48,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Non-critical
       }
       setDatabases(dbs);
+      setSelectedDatabase(dbs.find((d) => d.is_default)?.name || dbs[0]?.name || null);
 
       // Extract user info from email
       const domain = email.split('@')[1] || '';
@@ -63,15 +67,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const selectDatabase = useCallback((dbName: string) => {
+    setSelectedDatabase(dbName);
+  }, []);
+
   const logout = useCallback(() => {
     clearTokens();
     setUser(null);
     setDatabases([]);
+    setSelectedDatabase(null);
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ user, databases, isAuthenticated, isLoading, login, logout }}
+      value={{ user, databases, selectedDatabase, isAuthenticated, isLoading, login, logout, selectDatabase }}
     >
       {children}
     </AuthContext.Provider>

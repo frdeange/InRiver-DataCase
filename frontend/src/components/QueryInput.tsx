@@ -1,16 +1,18 @@
 import { useState, useRef, type KeyboardEvent } from 'react';
 import { useChatStore } from '../store/chatStore';
+import { useAuth } from '../auth/useAuth';
 
 export function QueryInput() {
   const [input, setInput] = useState('');
   const isProcessing = useChatStore((s) => s.isProcessing);
   const sendQuery = useChatStore((s) => s.sendQuery);
+  const { selectedDatabase } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = () => {
     const trimmed = input.trim();
     if (!trimmed || isProcessing) return;
-    sendQuery(trimmed);
+    sendQuery(trimmed, selectedDatabase ?? undefined);
     setInput('');
     // Reset textarea height
     if (textareaRef.current) {

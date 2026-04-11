@@ -2,7 +2,7 @@ import { useAuth } from '../auth/useAuth';
 import { DatabaseBadge } from './DatabaseBadge';
 
 export function Header() {
-  const { user, databases, logout } = useAuth();
+  const { user, databases, selectedDatabase, selectDatabase, logout } = useAuth();
 
   return (
     <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between shrink-0">
@@ -13,7 +13,7 @@ export function Header() {
           </svg>
         </div>
         <h1 className="text-lg font-semibold text-gray-900">InRiver DataCase</h1>
-        <DatabaseBadge databases={databases} />
+        <DatabaseBadge databases={databases} selectedDb={selectedDatabase ?? undefined} onSelect={selectDatabase} />
       </div>
 
       <div className="flex items-center gap-4">

@@ -36,12 +36,17 @@ def test_databases_endpoint_returns_authorized_only(test_app, test_user_token, a
         headers={"Authorization": f"Bearer {test_user_token}"},
     )
     assert resp.status_code == 200
-    assert resp.json()["databases"] == ["db-acme"]
+    dbs = resp.json()
+    assert len(dbs) == 1
+    assert dbs[0]["name"] == "db-acme"
+    assert dbs[0]["is_default"] is True
 
-    # Admin should see all
+    # Admin should see all 3
     resp = test_app.get(
         "/api/v1/databases",
         headers={"Authorization": f"Bearer {admin_user_token}"},
     )
     assert resp.status_code == 200
-    assert set(resp.json()["databases"]) == {"db-acme", "db-nova", "db-apex"}
+    dbs = resp.json()
+    assert len(dbs) == 3
+    assert {d["name"] for d in dbs} == {"db-acme", "db-nova", "db-apex"}
