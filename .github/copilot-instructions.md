@@ -9,14 +9,15 @@ InRiver DataCase is an AI-powered natural-language query interface for InRiver P
 Three containerized services deployed as Azure Container Apps:
 
 - **Backend** (`backend/`) — Python 3.13 + FastAPI. Handles auth, authorization, domain-to-database resolution, and proxies queries to the orchestrator. All routes under `/api/v1/`.
-- **Orchestrator** (`orchestrator/`) — Python 3.13 + FastAPI. Runs the AI agent pipeline using Microsoft Agent Framework orchestration patterns (`SequentialOrchestration` / `HandoffOrchestration`). Agents are persistent PromptAgents registered in Azure AI Foundry, consumed via `FoundryAgent`.
+- **Orchestrator** (`orchestrator/`) — Python 3.13 + FastAPI. Runs the AI agent pipeline using Microsoft Agent Framework `HandoffBuilder` → `Workflow`. Agents are persistent PromptAgents registered in Azure AI Foundry, consumed via `FoundryAgent`. Tools decorated with `@tool` from `agent_framework`.
 - **Frontend** (`frontend/`) — React 19 + TypeScript + Vite + Tailwind CSS + Zustand. Served by Nginx in production. No MSAL — custom login form with JWT auth.
 
 Supporting infrastructure:
 
 - **Azure SQL** — 4 databases on one server: `db-acme`, `db-nova`, `db-apex` (tenant PIM data), `db-users` (auth + domain mapping).
 - **IaC** — Bicep modules in `infra/`, orchestrated by `infra/main.bicep`. Supports reuse of existing resources via `existing*Id` parameters.
-- **Deployment** — `scripts/deploy.sh` runs the full pipeline: preflight → Bicep → Docker build/push → seed databases → grant SQL access.
+- **Deployment** — `scripts/deploy.sh` runs the full pipeline: preflight → Bicep → agent provisioning → Docker build/push → seed databases → grant SQL access.
+- **Container Registry** — `inriverdevacr.azurecr.io`. Base images imported under `base/` (python, node, nginx). All Dockerfiles use ACR base images, not Docker Hub.
 
 ## Build & Run Commands
 
@@ -64,9 +65,11 @@ az bicep build --file infra/main.bicep   # validate Bicep
 
 ### AI Agents
 
-- All agents are persistent PromptAgents registered in Azure AI Foundry, created via `azure-ai-projects` SDK (`AIProjectClient.agents.create_agent()`).
-- Agents are consumed using `FoundryAgent` from `agent-framework-foundry`.
-- Orchestration uses Microsoft Agent Framework patterns — not manual Python pipelines with if/else.
+- 3 PromptAgents registered in Azure AI Foundry: `inriver-safety`, `inriver-sql-generator`, `inriver-response-formatter`.
+- Created via `azure-ai-projects` SDK (`AIProjectClient.agents.create_version()`). Provisioning script: `scripts/setup-agents.py` (idempotent).
+- Consumed using `FoundryAgent` from `agent-framework-foundry`.
+- Orchestration uses `HandoffBuilder` from `agent_framework.orchestrations` — builds a `Workflow`, invoked with `await workflow.run(message)`. Do NOT implement manual if/else pipelines.
+- FunctionTools decorated with `@tool` from `agent_framework`: `validate_sql`, `execute_sql`, `get_schema`.
 - Model deployment: `gpt-5.4`.
 
 ### Code Style
