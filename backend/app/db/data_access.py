@@ -12,9 +12,9 @@ MAX_ROWS = 500
 
 def _get_token_bytes() -> bytes:
     """Get an Azure AD access token for SQL and pack it into the ODBC connect attrs format."""
-    from azure.identity import DefaultAzureCredential
+    from app.auth.azure_credential import get_azure_credential
 
-    credential = DefaultAzureCredential()
+    credential = get_azure_credential()
     token = credential.get_token("https://database.windows.net/.default")
     # Pack the token string as required by ODBC SQL_COPT_SS_ACCESS_TOKEN
     token_bytes = token.token.encode("utf-16-le")

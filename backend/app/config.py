@@ -18,9 +18,12 @@ class Settings(BaseSettings):
     sql_conn_nova: str = ""
     sql_conn_apex: str = ""
 
-    # Entra ID
+    # Entra ID — for JWT validation
     azure_tenant_id: str = ""
-    azure_client_id: str = ""
+    azure_client_id: str = ""  # App Registration client ID
+
+    # Managed Identity — for Azure SDK auth (AI Foundry, SQL, Key Vault)
+    azure_mi_client_id: str = ""  # User-Assigned Managed Identity client ID
 
     # Observability
     log_level: str = "INFO"

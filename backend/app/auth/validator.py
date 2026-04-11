@@ -84,26 +84,45 @@ async def get_auth_context(request: Request) -> AuthContext:
         jwks = await _fetch_jwks()
         signing_key = _get_signing_key(jwks, token)
 
-        issuer = (
-            f"https://login.microsoftonline.com/"
-            f"{settings.azure_tenant_id}/v2.0"
+        # Decode without verification first to inspect claims for debugging
+        unverified = jwt.get_unverified_claims(token)
+        token_aud = unverified.get("aud")
+        token_iss = unverified.get("iss")
+        token_ver = unverified.get("ver")
+        logger.info(
+            "token_claims_debug",
+            aud=token_aud,
+            iss=token_iss,
+            ver=token_ver,
+            expected_aud=[
+                settings.azure_client_id,
+                f"api://{settings.azure_client_id}",
+            ],
+            request_id=request_id,
         )
+
+        # v1 tokens use a different issuer format than v2
+        issuers = [
+            f"https://login.microsoftonline.com/{settings.azure_tenant_id}/v2.0",
+            f"https://sts.windows.net/{settings.azure_tenant_id}/",
+        ]
 
         payload = jwt.decode(
             token,
             signing_key,
             algorithms=["RS256"],
-            audience=settings.azure_client_id,
-            issuer=issuer,
+            audience=f"api://{settings.azure_client_id}",
+            issuer=issuers,
+            options={"verify_iss": True},
         )
-    except JWTError:
-        logger.warning("jwt_validation_failed", request_id=request_id)
+    except JWTError as e:
+        logger.warning("jwt_validation_failed", request_id=request_id, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
-    except Exception:
-        logger.warning("auth_error", request_id=request_id)
+    except Exception as e:
+        logger.warning("auth_error", request_id=request_id, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed",

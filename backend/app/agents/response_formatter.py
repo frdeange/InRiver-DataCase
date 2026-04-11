@@ -1,6 +1,6 @@
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
-from azure.identity import DefaultAzureCredential
+from app.auth.azure_credential import get_azure_credential
 from app.config import settings
 import structlog
 
@@ -43,7 +43,7 @@ async def format_response(question: str, exec_result: dict) -> dict:
 
     try:
         client = FoundryChatClient(
-            credential=DefaultAzureCredential(),
+            credential=get_azure_credential(),
             project_endpoint=settings.azure_ai_project_endpoint,
             model=settings.azure_ai_model_deployment_name,
         )

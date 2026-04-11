@@ -82,12 +82,14 @@ async def query(
 
     try:
         from app.agents.orchestrator import orchestrate_query
+        from app.observability.audit_logger import AuditLogger
 
+        audit_logger = AuditLogger()
         result = await orchestrate_query(
             question=body.question,
             database=body.database,
-            user_id=auth.user_id,
-            request_id=request_id,
+            auth_context=auth,
+            audit_logger=audit_logger,
         )
         return QueryResponse(
             answer=result.get("answer", ""),
