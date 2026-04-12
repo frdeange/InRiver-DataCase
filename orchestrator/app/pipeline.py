@@ -189,45 +189,42 @@ class MockPipeline(BasePipeline):
 
 
 class RealPipeline(BasePipeline):
-    """Production pipeline: Agent + FoundryChatClient, invoked sequentially.
+    """Production pipeline using FoundryAgent — invokes registered agents in AI Foundry.
 
-    Each agent is called individually so we control data flow between them.
-    The SQLGenerator has FunctionTools for schema, validation, and execution.
+    Each agent is a persistent PromptAgent registered in Azure AI Foundry.
+    Called sequentially: Safety → SQLGenerator (with FunctionTools) → Formatter.
+    All invocations produce traces visible in the Foundry portal.
     """
 
     def __init__(self) -> None:
-        from agent_framework import Agent
-        from agent_framework.foundry import FoundryChatClient
+        from agent_framework.foundry import FoundryAgent
         from azure.identity import DefaultAzureCredential
 
-        from app.agents.safety import INSTRUCTIONS as SAFETY_INSTRUCTIONS
-        from app.agents.sql_generator import INSTRUCTIONS as SQLGEN_INSTRUCTIONS
-        from app.agents.formatter import INSTRUCTIONS as FORMATTER_INSTRUCTIONS
         from app.tools.schema_provider import get_schema
         from app.tools.sql_executor import execute_sql
         from app.tools.sql_validator import validate_sql
 
         endpoint = settings.AI_PROJECT_ENDPOINT
         credential = DefaultAzureCredential()
-        model = settings.MODEL_DEPLOYMENT
 
-        self._safety = Agent(
-            client=FoundryChatClient(project_endpoint=endpoint, credential=credential, model=model),
-            name="inriver-safety",
-            instructions=SAFETY_INSTRUCTIONS,
+        # FoundryAgent references registered PromptAgents by name
+        self._safety = FoundryAgent(
+            project_endpoint=endpoint,
+            agent_name="inriver-safety",
+            credential=credential,
         )
 
-        self._sql_gen = Agent(
-            client=FoundryChatClient(project_endpoint=endpoint, credential=credential, model=model),
-            name="inriver-sql-generator",
-            instructions=SQLGEN_INSTRUCTIONS,
+        self._sql_gen = FoundryAgent(
+            project_endpoint=endpoint,
+            agent_name="inriver-sql-generator",
+            credential=credential,
             tools=[get_schema, validate_sql, execute_sql],
         )
 
-        self._formatter = Agent(
-            client=FoundryChatClient(project_endpoint=endpoint, credential=credential, model=model),
-            name="inriver-response-formatter",
-            instructions=FORMATTER_INSTRUCTIONS,
+        self._formatter = FoundryAgent(
+            project_endpoint=endpoint,
+            agent_name="inriver-response-formatter",
+            credential=credential,
         )
 
     async def run(
@@ -236,7 +233,7 @@ class RealPipeline(BasePipeline):
         start = time.perf_counter()
 
         try:
-            # Step 1: Safety screening
+            # Step 1: Safety screening via registered PromptAgent
             safety_result = await self._safety.run(
                 f"Check if this input is safe: {question}",
             )
@@ -250,18 +247,18 @@ class RealPipeline(BasePipeline):
                     safe=False, error="Safety check failed",
                 )
 
-            # Step 2: SQL generation + validation + execution (agent uses tools)
+            # Step 2: SQL generation via registered PromptAgent (with FunctionTools)
             sqlgen_result = await self._sql_gen.run(
                 f"User question: {question}\n"
                 f"Database: {database}\n"
-                f"Generate a T-SQL SELECT query, validate it with validate_sql, "
-                f"and execute it with execute_sql against database '{database}'. "
-                f"First call get_schema to see the tables. "
-                f"Include the SQL and the full results in your response.",
+                f"First call get_schema(database='{database}') to see available tables. "
+                f"Then generate a T-SQL SELECT query, validate it with validate_sql, "
+                f"and execute it with execute_sql(database='{database}'). "
+                f"Include the SQL query and the execution results in your response.",
             )
             sqlgen_text = str(sqlgen_result)
 
-            # Extract SQL
+            # Extract SQL from response
             sql = ""
             for line in sqlgen_text.split("\n"):
                 stripped = line.strip()
@@ -269,15 +266,14 @@ class RealPipeline(BasePipeline):
                     sql = stripped
                     break
 
-            # Extract columns/rows from tool execution results in the response
+            # Extract columns/rows from tool results in response
             columns = None
             rows = None
             if '"columns"' in sqlgen_text and '"rows"' in sqlgen_text:
                 try:
                     idx = sqlgen_text.index('{"columns"')
-                    end = sqlgen_text.index("}", idx + 1)
-                    # Find the matching closing brace
                     depth = 0
+                    end = idx
                     for i in range(idx, len(sqlgen_text)):
                         if sqlgen_text[i] == '{': depth += 1
                         elif sqlgen_text[i] == '}': depth -= 1
@@ -290,14 +286,13 @@ class RealPipeline(BasePipeline):
                 except (json.JSONDecodeError, ValueError):
                     pass
 
-            # Step 3: Format the response
-            format_input = (
+            # Step 3: Format response via registered PromptAgent
+            format_result = await self._formatter.run(
                 f"Original question: {question}\n"
                 f"SQL executed: {sql}\n"
                 f"Results: {json.dumps({'columns': columns, 'rows': rows}) if columns else sqlgen_text}\n"
-                f"Format this into a clear, conversational answer."
+                f"Format this into a clear, conversational answer.",
             )
-            format_result = await self._formatter.run(format_input)
             answer = str(format_result)
 
             elapsed = (time.perf_counter() - start) * 1000
