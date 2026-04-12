@@ -189,15 +189,19 @@ class MockPipeline(BasePipeline):
 
 
 class RealPipeline(BasePipeline):
-    """Production pipeline using FoundryAgent — invokes registered agents in AI Foundry.
+    """Production pipeline: MAF SequentialBuilder with FoundryAgent + Agent.
 
-    Each agent is a persistent PromptAgent registered in Azure AI Foundry.
-    Called sequentially: Safety → SQLGenerator (with FunctionTools) → Formatter.
-    All invocations produce traces visible in the Foundry portal.
+    - Safety & Formatter: FoundryAgent (registered PromptAgents, no local tools)
+    - SQLGenerator: Agent + FoundryChatClient (local FunctionTools for schema/validate/execute)
+    
+    SequentialBuilder orchestrates: Safety → SQLGenerator → Formatter
+    with shared conversation context flowing through all participants.
     """
 
     def __init__(self) -> None:
-        from agent_framework.foundry import FoundryAgent
+        from agent_framework import Agent
+        from agent_framework.foundry import FoundryAgent, FoundryChatClient
+        from agent_framework.orchestrations import SequentialBuilder
         from azure.identity import DefaultAzureCredential
 
         from app.tools.schema_provider import get_schema
@@ -207,18 +211,11 @@ class RealPipeline(BasePipeline):
         endpoint = settings.AI_PROJECT_ENDPOINT
         credential = DefaultAzureCredential()
 
-        # FoundryAgent references registered PromptAgents by name
+        # Safety & Formatter: FoundryAgent (invokes registered Foundry agents, visible in portal)
         self._safety = FoundryAgent(
             project_endpoint=endpoint,
             agent_name="inriver-safety",
             credential=credential,
-        )
-
-        self._sql_gen = FoundryAgent(
-            project_endpoint=endpoint,
-            agent_name="inriver-sql-generator",
-            credential=credential,
-            tools=[get_schema, validate_sql, execute_sql],
         )
 
         self._formatter = FoundryAgent(
@@ -227,73 +224,116 @@ class RealPipeline(BasePipeline):
             credential=credential,
         )
 
+        # SQLGenerator: Agent + FoundryChatClient (needs local FunctionTool execution)
+        # FoundryAgent does NOT execute local Python tools — Agent + FoundryChatClient does
+        self._sql_gen = Agent(
+            client=FoundryChatClient(
+                project_endpoint=endpoint,
+                credential=credential,
+                model=settings.MODEL_DEPLOYMENT,
+            ),
+            name="inriver-sql-generator",
+            instructions=(
+                "You are a SQL generation agent for the InRiver DataCase PIM system.\n"
+                "You MUST follow these steps:\n"
+                "1. Call get_schema(database=<db>) to see available tables and columns\n"
+                "2. Generate a T-SQL SELECT query based on the user's question\n"
+                "3. Call validate_sql(sql=<query>) to verify it is safe\n"
+                "4. Call execute_sql(sql=<query>, database=<db>) to run it\n"
+                "5. Report the SQL and the execution results\n"
+                "IMPORTANT: Always call all tools. The database name is in the user's message."
+            ),
+            tools=[get_schema, validate_sql, execute_sql],
+        )
+
+        # MAF SequentialBuilder: Safety → SQLGenerator → Formatter
+        self._workflow = SequentialBuilder(
+            participants=[self._safety, self._sql_gen, self._formatter],
+            intermediate_outputs=True,
+        ).build()
+
     async def run(
         self, question: str, database: str, schema: str, user_email: str
     ) -> PipelineResult:
         start = time.perf_counter()
 
+        prompt = (
+            f"User question: {question}\n"
+            f"Database: {database}\n"
+            f"Instructions: First check safety. If safe, generate a T-SQL SELECT query "
+            f"using get_schema(database='{database}'), validate with validate_sql, "
+            f"execute with execute_sql(database='{database}'), then format the results."
+        )
+
         try:
-            # Step 1: Safety screening via registered PromptAgent
-            safety_result = await self._safety.run(
-                f"Check if this input is safe: {question}",
-            )
-            safety_text = str(safety_result)
+            # Run the sequential workflow
+            result = await self._workflow.run(prompt)
 
-            if '"safe": false' in safety_text.lower() or '"safe":false' in safety_text.lower():
-                elapsed = (time.perf_counter() - start) * 1000
-                return PipelineResult(
-                    answer=f"Query rejected: {safety_text}",
-                    sql="", database=database, execution_time_ms=elapsed,
-                    safe=False, error="Safety check failed",
-                )
-
-            # Step 2: SQL generation via registered PromptAgent (with FunctionTools)
-            sqlgen_result = await self._sql_gen.run(
-                f"User question: {question}\n"
-                f"Database: {database}\n"
-                f"First call get_schema(database='{database}') to see available tables. "
-                f"Then generate a T-SQL SELECT query, validate it with validate_sql, "
-                f"and execute it with execute_sql(database='{database}'). "
-                f"Include the SQL query and the execution results in your response.",
-            )
-            sqlgen_text = str(sqlgen_result)
-
-            # Extract SQL from response
+            # Extract data from the workflow result
+            answer = ""
             sql = ""
-            for line in sqlgen_text.split("\n"):
-                stripped = line.strip()
-                if stripped.upper().startswith("SELECT") and "FROM" in stripped.upper():
-                    sql = stripped
-                    break
-
-            # Extract columns/rows from tool results in response
             columns = None
             rows = None
-            if '"columns"' in sqlgen_text and '"rows"' in sqlgen_text:
-                try:
-                    idx = sqlgen_text.index('{"columns"')
-                    depth = 0
-                    end = idx
-                    for i in range(idx, len(sqlgen_text)):
-                        if sqlgen_text[i] == '{': depth += 1
-                        elif sqlgen_text[i] == '}': depth -= 1
-                        if depth == 0:
-                            end = i + 1
-                            break
-                    data = json.loads(sqlgen_text[idx:end])
-                    columns = data.get("columns")
-                    rows = data.get("rows")
-                except (json.JSONDecodeError, ValueError):
-                    pass
 
-            # Step 3: Format response via registered PromptAgent
-            format_result = await self._formatter.run(
-                f"Original question: {question}\n"
-                f"SQL executed: {sql}\n"
-                f"Results: {json.dumps({'columns': columns, 'rows': rows}) if columns else sqlgen_text}\n"
-                f"Format this into a clear, conversational answer.",
-            )
-            answer = str(format_result)
+            # Walk through workflow events to extract SQL and data
+            for event in result:
+                event_str = str(event)
+
+                # Extract SQL
+                if not sql:
+                    for line in event_str.split("\n"):
+                        stripped = line.strip()
+                        if stripped.upper().startswith("SELECT") and "FROM" in stripped.upper():
+                            sql = stripped
+                            break
+
+                # Extract columns/rows from tool results
+                if not columns and '"columns"' in event_str and '"rows"' in event_str:
+                    try:
+                        idx = event_str.index('{"columns"')
+                        depth = 0
+                        for i in range(idx, len(event_str)):
+                            if event_str[i] == '{': depth += 1
+                            elif event_str[i] == '}': depth -= 1
+                            if depth == 0:
+                                data = json.loads(event_str[idx:i + 1])
+                                columns = data.get("columns")
+                                rows = data.get("rows")
+                                break
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+
+            # Final output is the formatter's response (last in the sequence)
+            outputs = result.get_outputs()
+            if outputs:
+                last = outputs[-1] if isinstance(outputs, list) else outputs
+                if isinstance(last, list):
+                    # Get last assistant message from the formatter
+                    for msg in reversed(last):
+                        if hasattr(msg, 'role') and msg.role == 'assistant':
+                            raw = msg.text or str(msg)
+                            # Clean up: remove tool call artifacts from the answer
+                            # The sequential output may contain intermediate tool calls
+                            clean_lines = []
+                            for line in raw.split("\n"):
+                                # Skip lines that are tool call artifacts
+                                if line.strip().startswith("to=") or line.strip().startswith('{"database"') or line.strip().startswith('{"sql"'):
+                                    continue
+                                clean_lines.append(line)
+                            answer = "\n".join(clean_lines).strip()
+                            if answer:
+                                break
+                else:
+                    raw = str(last)
+                    clean_lines = []
+                    for line in raw.split("\n"):
+                        if line.strip().startswith("to=") or line.strip().startswith('{"database"') or line.strip().startswith('{"sql"'):
+                            continue
+                        clean_lines.append(line)
+                    answer = "\n".join(clean_lines).strip()
+
+            if not answer:
+                answer = "The query was processed but no formatted response was generated."
 
             elapsed = (time.perf_counter() - start) * 1000
             return PipelineResult(

@@ -1,0 +1,5 @@
+fastmcp[uvicorn]==3.2.3
+sqlglot==26.32.0
+pyodbc==5.2.0
+azure-identity==1.23.0
+structlog==25.4.0
