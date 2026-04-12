@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Markdown from 'react-markdown';
 import type { ChatMessage } from '../types';
 import { ResultsTable } from './ResultsTable';
 
@@ -36,9 +37,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             {message.error && (
               <div className="text-red-600 text-sm mb-1 font-medium">Error: {message.error}</div>
             )}
-            <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isUser ? '' : 'text-gray-800'}`}>
-              {message.content}
-            </p>
+            {isUser ? (
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+            ) : (
+              <div className="text-sm leading-relaxed text-gray-800 prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:my-2 prose-pre:bg-gray-900 prose-pre:text-gray-100">
+                <Markdown>{message.content}</Markdown>
+              </div>
+            )}
 
             {/* SQL collapsible */}
             {message.sql && (

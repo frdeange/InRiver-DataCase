@@ -298,11 +298,26 @@ class RealPipeline(BasePipeline):
                 execution_time_ms=elapsed, columns=columns, rows=rows,
             )
         except Exception as exc:
+            import structlog
+            structlog.get_logger().error(
+                "pipeline_error",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                question=question,
+                database=database,
+            )
             elapsed = (time.perf_counter() - start) * 1000
+
+            # Sanitize error message — never expose internals to users
+            if "content_filter" in str(exc).lower() or "content error" in str(exc).lower():
+                user_message = "Your request could not be processed. Please rephrase your question."
+            else:
+                user_message = "An error occurred while processing your query. Please try again."
+
             return PipelineResult(
-                answer=f"Pipeline error: {exc}",
+                answer=user_message,
                 sql="", database=database,
-                execution_time_ms=elapsed, error=str(exc),
+                execution_time_ms=elapsed, error=user_message,
             )
 
 

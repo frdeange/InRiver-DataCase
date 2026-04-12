@@ -1,6 +1,7 @@
 import { createContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import type { UserInfo, DatabaseInfo } from '../types';
 import { login as apiLogin, getDatabases, clearTokens, getAccessToken } from '../api/client';
+import { useChatStore } from '../store/chatStore';
 
 interface AuthContextType {
   user: UserInfo | null;
@@ -41,6 +42,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     setIsLoading(true);
     try {
+      // Clear previous session data before new login
+      useChatStore.getState().clearMessages();
+
       await apiLogin(email, password);
 
       // Fetch databases after login
@@ -76,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setDatabases([]);
     setSelectedDatabase(null);
+    useChatStore.getState().clearMessages();
   }, []);
 
   return (
