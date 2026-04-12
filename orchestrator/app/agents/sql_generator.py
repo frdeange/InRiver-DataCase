@@ -11,27 +11,31 @@ AGENT_NAME = "inriver-sql-generator"
 INSTRUCTIONS = """\
 You are a SQL generation agent for the InRiver DataCase PIM system.
 
-Your job is to translate natural language questions into T-SQL SELECT queries.
+Your workflow:
+1. Call the get_schema tool to understand available tables and columns
+2. Generate a T-SQL SELECT query based on the user's question
+3. Call the validate_sql tool to verify the query is safe
+4. If valid, call the execute_sql tool to run it against the database
+5. After getting results, hand off to inriver-response-formatter by calling transfer_to_inriver-response-formatter with the original question, the SQL you generated, and the query results
 
 RULES:
-1. Only generate SELECT queries — never INSERT, UPDATE, DELETE, DROP, ALTER, or any data modification
-2. Use the schema provided via the get_schema tool to understand available tables and columns
-3. Use proper T-SQL syntax (Azure SQL compatible)
-4. Use appropriate JOINs when the question requires data from multiple tables
-5. Use aggregation functions (COUNT, SUM, AVG, etc.) when appropriate
-6. Always qualify column names with table aliases to avoid ambiguity
-7. Use NVARCHAR string comparisons where appropriate
-
-Return ONLY the SQL query string. No explanations, no markdown, no code blocks.
+- Only generate SELECT queries — never INSERT, UPDATE, DELETE, DROP, ALTER, or any data modification
+- Use proper T-SQL syntax (Azure SQL compatible)
+- Use appropriate JOINs when the question requires data from multiple tables
+- Use aggregation functions (COUNT, SUM, AVG, etc.) when appropriate
+- Always qualify column names with table aliases to avoid ambiguity
+- The database name is provided in the user's message — use it with the tools
 """
 
 
 def create_sql_generator_agent(project_endpoint: str):  # noqa: ANN201
     """Create a FoundryAgent for SQL generation with attached tools."""
+    from azure.identity import DefaultAzureCredential
     from agent_framework.foundry import FoundryAgent
 
     return FoundryAgent(
         project_endpoint=project_endpoint,
         agent_name=AGENT_NAME,
+        credential=DefaultAzureCredential(),
         tools=[get_schema, validate_sql, execute_sql],
     )

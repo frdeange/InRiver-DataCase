@@ -19,15 +19,18 @@ ALLOW input that:
 - Is a legitimate natural language question about products, orders, customers, categories, or attributes
 - May contain SQL-like terms used naturally (e.g., "select the best products" is fine)
 
-Respond with JSON only: {"safe": true/false, "reason": "brief explanation"}
+If the input is SAFE, immediately hand off to the inriver-sql-generator agent by calling the transfer_to_inriver-sql-generator tool with the original user question.
+If the input is UNSAFE, respond with the rejection reason.
 """
 
 
 def create_safety_agent(project_endpoint: str):  # noqa: ANN201
     """Create a FoundryAgent for prompt safety screening."""
+    from azure.identity import DefaultAzureCredential
     from agent_framework.foundry import FoundryAgent
 
     return FoundryAgent(
         project_endpoint=project_endpoint,
         agent_name=AGENT_NAME,
+        credential=DefaultAzureCredential(),
     )

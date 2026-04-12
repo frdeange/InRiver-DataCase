@@ -189,30 +189,45 @@ class MockPipeline(BasePipeline):
 
 
 class RealPipeline(BasePipeline):
-    """Production pipeline using FoundryAgent + HandoffBuilder → Workflow."""
+    """Production pipeline: Agent + FoundryChatClient, invoked sequentially.
+
+    Each agent is called individually so we control data flow between them.
+    The SQLGenerator has FunctionTools for schema, validation, and execution.
+    """
 
     def __init__(self) -> None:
-        from agent_framework.orchestrations import HandoffBuilder
+        from agent_framework import Agent
+        from agent_framework.foundry import FoundryChatClient
+        from azure.identity import DefaultAzureCredential
 
-        from app.agents.formatter import create_formatter_agent
-        from app.agents.safety import create_safety_agent
-        from app.agents.sql_generator import create_sql_generator_agent
+        from app.agents.safety import INSTRUCTIONS as SAFETY_INSTRUCTIONS
+        from app.agents.sql_generator import INSTRUCTIONS as SQLGEN_INSTRUCTIONS
+        from app.agents.formatter import INSTRUCTIONS as FORMATTER_INSTRUCTIONS
+        from app.tools.schema_provider import get_schema
+        from app.tools.sql_executor import execute_sql
+        from app.tools.sql_validator import validate_sql
 
         endpoint = settings.AI_PROJECT_ENDPOINT
+        credential = DefaultAzureCredential()
+        model = settings.MODEL_DEPLOYMENT
 
-        self._safety = create_safety_agent(endpoint)
-        self._sql_gen = create_sql_generator_agent(endpoint)
-        self._formatter = create_formatter_agent(endpoint)
+        self._safety = Agent(
+            client=FoundryChatClient(project_endpoint=endpoint, credential=credential, model=model),
+            name="inriver-safety",
+            instructions=SAFETY_INSTRUCTIONS,
+        )
 
-        # Build the workflow using the fluent HandoffBuilder API:
-        # Safety screens input → hands off to SQLGenerator → hands off to Formatter
-        self._workflow = (
-            HandoffBuilder()
-            .participants([self._safety, self._sql_gen, self._formatter])
-            .with_start_agent(self._safety)
-            .add_handoff(self._safety, [self._sql_gen], description="Pass safe queries to SQL generation")
-            .add_handoff(self._sql_gen, [self._formatter], description="Pass SQL results to response formatting")
-            .build()
+        self._sql_gen = Agent(
+            client=FoundryChatClient(project_endpoint=endpoint, credential=credential, model=model),
+            name="inriver-sql-generator",
+            instructions=SQLGEN_INSTRUCTIONS,
+            tools=[get_schema, validate_sql, execute_sql],
+        )
+
+        self._formatter = Agent(
+            client=FoundryChatClient(project_endpoint=endpoint, credential=credential, model=model),
+            name="inriver-response-formatter",
+            instructions=FORMATTER_INSTRUCTIONS,
         )
 
     async def run(
@@ -220,51 +235,82 @@ class RealPipeline(BasePipeline):
     ) -> PipelineResult:
         start = time.perf_counter()
 
-        prompt = (
-            f"User ({user_email}) asked: {question}\n"
-            f"Database: {database}\n"
-            f"Schema:\n{schema}\n"
-        )
-
         try:
-            result = await self._workflow.run(prompt)
+            # Step 1: Safety screening
+            safety_result = await self._safety.run(
+                f"Check if this input is safe: {question}",
+            )
+            safety_text = str(safety_result)
 
-            # Extract outputs from WorkflowRunResult
-            outputs = result.get_outputs()
-            answer = ""
+            if '"safe": false' in safety_text.lower() or '"safe":false' in safety_text.lower():
+                elapsed = (time.perf_counter() - start) * 1000
+                return PipelineResult(
+                    answer=f"Query rejected: {safety_text}",
+                    sql="", database=database, execution_time_ms=elapsed,
+                    safe=False, error="Safety check failed",
+                )
+
+            # Step 2: SQL generation + validation + execution (agent uses tools)
+            sqlgen_result = await self._sql_gen.run(
+                f"User question: {question}\n"
+                f"Database: {database}\n"
+                f"Generate a T-SQL SELECT query, validate it with validate_sql, "
+                f"and execute it with execute_sql against database '{database}'. "
+                f"First call get_schema to see the tables. "
+                f"Include the SQL and the full results in your response.",
+            )
+            sqlgen_text = str(sqlgen_result)
+
+            # Extract SQL
             sql = ""
+            for line in sqlgen_text.split("\n"):
+                stripped = line.strip()
+                if stripped.upper().startswith("SELECT") and "FROM" in stripped.upper():
+                    sql = stripped
+                    break
 
-            if outputs:
-                # The last agent's output is the formatted response
-                last_output = outputs[-1] if isinstance(outputs, list) else outputs
-                answer = str(last_output)
-
-            # Try to extract SQL from intermediate outputs
-            for event in result:
-                event_str = str(event)
-                if "SELECT" in event_str.upper() and "FROM" in event_str.upper():
-                    # Found a SQL-like string in the pipeline events
-                    for line in event_str.split("\n"):
-                        stripped = line.strip()
-                        if stripped.upper().startswith("SELECT"):
-                            sql = stripped
+            # Extract columns/rows from tool execution results in the response
+            columns = None
+            rows = None
+            if '"columns"' in sqlgen_text and '"rows"' in sqlgen_text:
+                try:
+                    idx = sqlgen_text.index('{"columns"')
+                    end = sqlgen_text.index("}", idx + 1)
+                    # Find the matching closing brace
+                    depth = 0
+                    for i in range(idx, len(sqlgen_text)):
+                        if sqlgen_text[i] == '{': depth += 1
+                        elif sqlgen_text[i] == '}': depth -= 1
+                        if depth == 0:
+                            end = i + 1
                             break
+                    data = json.loads(sqlgen_text[idx:end])
+                    columns = data.get("columns")
+                    rows = data.get("rows")
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+            # Step 3: Format the response
+            format_input = (
+                f"Original question: {question}\n"
+                f"SQL executed: {sql}\n"
+                f"Results: {json.dumps({'columns': columns, 'rows': rows}) if columns else sqlgen_text}\n"
+                f"Format this into a clear, conversational answer."
+            )
+            format_result = await self._formatter.run(format_input)
+            answer = str(format_result)
 
             elapsed = (time.perf_counter() - start) * 1000
             return PipelineResult(
-                answer=answer or "The query was processed but no response was generated.",
-                sql=sql,
-                database=database,
-                execution_time_ms=elapsed,
+                answer=answer, sql=sql, database=database,
+                execution_time_ms=elapsed, columns=columns, rows=rows,
             )
         except Exception as exc:
             elapsed = (time.perf_counter() - start) * 1000
             return PipelineResult(
                 answer=f"Pipeline error: {exc}",
-                sql="",
-                database=database,
-                execution_time_ms=elapsed,
-                error=str(exc),
+                sql="", database=database,
+                execution_time_ms=elapsed, error=str(exc),
             )
 
 

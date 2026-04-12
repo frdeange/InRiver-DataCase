@@ -23,9 +23,11 @@ Respond with a natural language answer only.
 
 def create_formatter_agent(project_endpoint: str):  # noqa: ANN201
     """Create a FoundryAgent for response formatting."""
+    from azure.identity import DefaultAzureCredential
     from agent_framework.foundry import FoundryAgent
 
     return FoundryAgent(
         project_endpoint=project_endpoint,
         agent_name=AGENT_NAME,
+        credential=DefaultAzureCredential(),
     )
