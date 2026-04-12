@@ -189,15 +189,15 @@ class MockPipeline(BasePipeline):
 
 
 class RealPipeline(BasePipeline):
-    """Production pipeline: FoundryAgent + MCPStreamableHTTPTool + SequentialBuilder.
+    """Production pipeline: pure FoundryAgent + SequentialBuilder.
 
     All agents are FoundryAgent (registered PromptAgents in Azure AI Foundry).
-    SQL tools are served by a remote MCP server (FastMCP on a separate ACA).
-    SequentialBuilder orchestrates: Safety → SQLGenerator → Formatter.
+    MCP tools are configured ON THE AGENTS IN FOUNDRY — not in SDK code.
+    Foundry handles tool calls to the MCP server automatically.
+    SequentialBuilder orchestrates the conversation: Safety → SQLGenerator → Formatter.
     """
 
     def __init__(self) -> None:
-        from agent_framework import MCPStreamableHTTPTool
         from agent_framework.foundry import FoundryAgent
         from agent_framework.orchestrations import SequentialBuilder
         from azure.identity import DefaultAzureCredential
@@ -205,13 +205,7 @@ class RealPipeline(BasePipeline):
         endpoint = settings.AI_PROJECT_ENDPOINT
         credential = DefaultAzureCredential()
 
-        # MCP tool connecting to the remote SQL tools server
-        self._mcp_tool = MCPStreamableHTTPTool(
-            name="sql-tools",
-            url=settings.MCP_TOOLS_URL,
-        )
-
-        # All agents are FoundryAgent — registered PromptAgents in AI Foundry
+        # Pure FoundryAgent — tools are configured in Foundry, not here
         self._safety = FoundryAgent(
             project_endpoint=endpoint,
             agent_name="inriver-safety",
@@ -222,17 +216,7 @@ class RealPipeline(BasePipeline):
             project_endpoint=endpoint,
             agent_name="inriver-sql-generator",
             credential=credential,
-            tools=[self._mcp_tool],
-            instructions=(
-                "You are a SQL generation agent for the InRiver DataCase PIM system.\n"
-                "You have MCP tools available. You MUST follow these steps:\n"
-                "1. Call get_schema(database=<db>) to see available tables and columns\n"
-                "2. Generate a T-SQL SELECT query based on the user's question and the schema\n"
-                "3. Call validate_sql(sql=<query>) to verify it is safe\n"
-                "4. Call execute_sql(sql=<query>, database=<db>) to run it\n"
-                "5. Include the SQL query and the full results in your response\n"
-                "IMPORTANT: Always call all tools. The database name is in the user's message."
-            ),
+            # MCP tools configured on the agent in Foundry — Foundry calls the MCP server
         )
 
         self._formatter = FoundryAgent(
@@ -241,10 +225,9 @@ class RealPipeline(BasePipeline):
             credential=credential,
         )
 
-        # MAF SequentialBuilder: Safety → SQLGenerator (with MCP tools) → Formatter
+        # MAF SequentialBuilder: conversation flows Safety → SQLGenerator → Formatter
         self._workflow = SequentialBuilder(
             participants=[self._safety, self._sql_gen, self._formatter],
-            intermediate_outputs=True,
         ).build()
 
     async def run(
@@ -252,29 +235,38 @@ class RealPipeline(BasePipeline):
     ) -> PipelineResult:
         start = time.perf_counter()
 
+        # The conversation flows through all agents via SequentialBuilder.
+        # Tools are handled by Foundry (MCP configured on the agent).
         prompt = (
             f"User question: {question}\n"
-            f"Database: {database}\n"
-            f"Instructions: First check safety. If safe, generate a T-SQL SELECT query "
-            f"using get_schema(database='{database}'), validate with validate_sql, "
-            f"execute with execute_sql(database='{database}'), then format the results."
+            f"Database: {database}"
         )
 
         try:
-            # Run the sequential workflow
             result = await self._workflow.run(prompt)
 
-            # Extract data from the workflow result
+            # Extract the final answer from the workflow outputs
             answer = ""
             sql = ""
             columns = None
             rows = None
 
-            # Walk through workflow events to extract SQL and data
+            # Get outputs — last agent's (formatter) response is the answer
+            outputs = result.get_outputs()
+            if outputs:
+                last = outputs[-1] if isinstance(outputs, list) else outputs
+                if isinstance(last, list):
+                    for msg in reversed(last):
+                        if hasattr(msg, 'role') and msg.role == 'assistant' and hasattr(msg, 'text') and msg.text:
+                            answer = msg.text
+                            break
+                else:
+                    answer = str(last)
+
+            # Scan conversation for SQL and structured data
             for event in result:
                 event_str = str(event)
 
-                # Extract SQL
                 if not sql:
                     for line in event_str.split("\n"):
                         stripped = line.strip()
@@ -282,7 +274,6 @@ class RealPipeline(BasePipeline):
                             sql = stripped
                             break
 
-                # Extract columns/rows from tool results
                 if not columns and '"columns"' in event_str and '"rows"' in event_str:
                     try:
                         idx = event_str.index('{"columns"')
@@ -297,35 +288,6 @@ class RealPipeline(BasePipeline):
                                 break
                     except (json.JSONDecodeError, ValueError):
                         pass
-
-            # Final output is the formatter's response (last in the sequence)
-            outputs = result.get_outputs()
-            if outputs:
-                last = outputs[-1] if isinstance(outputs, list) else outputs
-                if isinstance(last, list):
-                    # Get last assistant message from the formatter
-                    for msg in reversed(last):
-                        if hasattr(msg, 'role') and msg.role == 'assistant':
-                            raw = msg.text or str(msg)
-                            # Clean up: remove tool call artifacts from the answer
-                            # The sequential output may contain intermediate tool calls
-                            clean_lines = []
-                            for line in raw.split("\n"):
-                                # Skip lines that are tool call artifacts
-                                if line.strip().startswith("to=") or line.strip().startswith('{"database"') or line.strip().startswith('{"sql"'):
-                                    continue
-                                clean_lines.append(line)
-                            answer = "\n".join(clean_lines).strip()
-                            if answer:
-                                break
-                else:
-                    raw = str(last)
-                    clean_lines = []
-                    for line in raw.split("\n"):
-                        if line.strip().startswith("to=") or line.strip().startswith('{"database"') or line.strip().startswith('{"sql"'):
-                            continue
-                        clean_lines.append(line)
-                    answer = "\n".join(clean_lines).strip()
 
             if not answer:
                 answer = "The query was processed but no formatted response was generated."
