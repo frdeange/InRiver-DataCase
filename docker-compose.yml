@@ -17,6 +17,16 @@ services:
     env_file: ./orchestrator/.env
     environment:
       - BACKEND_URL=http://backend:8000
+      - MCP_TOOLS_URL=http://mcp-tools:8002/mcp
+    depends_on:
+      - mcp-tools
+
+  mcp-tools:
+    build: ./mcp-tools
+    ports:
+      - "8002:8002"
+    environment:
+      - SQL_SERVER=inriver-dev-sql.database.windows.net
 
   frontend:
     build: ./frontend

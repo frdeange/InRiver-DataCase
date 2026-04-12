@@ -11,8 +11,9 @@ class Settings(BaseSettings):
     )
     MODEL_DEPLOYMENT: str = "gpt-5.4"
     SQL_SERVER: str = "inriver-dev-sql.database.windows.net"
-    USE_MOCK_DB: bool = False  # False = real Azure SQL for queries
-    USE_REAL_AGENTS: bool = False  # True = FoundryAgent + HandoffBuilder, False = MockPipeline
+    USE_MOCK_DB: bool = False
+    USE_REAL_AGENTS: bool = False
+    MCP_TOOLS_URL: str = "http://localhost:8002/mcp"
     BACKEND_URL: str = "http://localhost:8000"
     AZURE_CLIENT_ID: str = ""
 

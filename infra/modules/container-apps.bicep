@@ -33,6 +33,9 @@ param appInsightsConnectionString string
 @description('Azure AI Project endpoint')
 param aiProjectEndpoint string
 
+@description('SQL Server FQDN for MCP tools')
+param sqlServerFqdn string = ''
+
 var envName = '${resourcePrefix}-cae'
 
 resource containerAppEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
@@ -226,7 +229,63 @@ resource orchestratorApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
 }
 
+// MCP Tools Server
+resource mcpToolsApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: '${resourcePrefix}-mcp-tools'
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${identityId}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: containerAppEnv.id
+    configuration: {
+      ingress: {
+        external: false
+        targetPort: 8002
+        transport: 'auto'
+        allowInsecure: false
+      }
+      registries: [
+        {
+          server: acrLoginServer
+          identity: identityId
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'mcp-tools'
+          image: 'mcr.microsoft.com/k8se/quickstart:latest'
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: identityClientId
+            }
+            {
+              name: 'SQL_SERVER'
+              value: sqlServerFqdn
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 3
+      }
+    }
+  }
+}
+
 output frontendUrl string = 'https://${frontendApp.properties.configuration.ingress.fqdn}'
 output backendUrl string = 'https://${backendApp.properties.configuration.ingress.fqdn}'
 output orchestratorUrl string = 'https://${orchestratorApp.properties.configuration.ingress.fqdn}'
+output mcpToolsUrl string = 'https://${mcpToolsApp.properties.configuration.ingress.fqdn}'
 output environmentId string = containerAppEnv.id

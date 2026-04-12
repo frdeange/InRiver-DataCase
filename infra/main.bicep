@@ -162,6 +162,7 @@ module containerApps 'modules/container-apps.bicep' = {
     logAnalyticsKey: monitoring.outputs.logAnalyticsKey
     appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
     aiProjectEndpoint: aiFoundry.outputs.aiProjectEndpoint
+    sqlServerFqdn: sql.outputs.sqlServerFqdn
   }
 }
 
@@ -171,6 +172,7 @@ output sqlServerFqdn string = sql.outputs.sqlServerFqdn
 output frontendUrl string = containerApps.outputs.frontendUrl
 output backendUrl string = containerApps.outputs.backendUrl
 output orchestratorUrl string = containerApps.outputs.orchestratorUrl
+output mcpToolsUrl string = containerApps.outputs.mcpToolsUrl
 output keyVaultName string = keyvault.outputs.keyVaultName
 output identityClientId string = identity.outputs.clientId
 output appInsightsConnectionString string = monitoring.outputs.appInsightsConnectionString

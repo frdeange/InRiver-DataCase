@@ -330,29 +330,29 @@ else
         echo -e "  ${YELLOW}SKIP: orchestrator/Dockerfile not found${NC}"
     fi
 
+    # MCP Tools
+    if [[ -f "${ROOT_DIR}/mcp-tools/Dockerfile" ]]; then
+        echo -e "  Building mcp-tools image..."
+        docker build -t "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-mcp-tools:latest" "${ROOT_DIR}/mcp-tools" \
+            || step_fail "MCP Tools Docker build failed."
+        echo -e "  Pushing mcp-tools image..."
+        docker push "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-mcp-tools:latest" \
+            || step_fail "MCP Tools Docker push failed."
+    else
+        echo -e "  ${YELLOW}SKIP: mcp-tools/Dockerfile not found${NC}"
+    fi
+
     # Update Container Apps to use the pushed images (they start with a placeholder)
     echo -e "  Updating Container Apps with real images..."
-    az containerapp update \
-        --name "${RESOURCE_PREFIX}-api" \
-        --resource-group "${RESOURCE_GROUP}" \
-        --image "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-api:latest" \
-        --output none 2>/dev/null \
-        && echo -e "  ${GREEN}✔${NC} Backend container updated" \
-        || echo -e "  ${YELLOW}⚠  Backend container update failed (may need manual update)${NC}"
-    az containerapp update \
-        --name "${RESOURCE_PREFIX}-frontend" \
-        --resource-group "${RESOURCE_GROUP}" \
-        --image "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-frontend:latest" \
-        --output none 2>/dev/null \
-        && echo -e "  ${GREEN}✔${NC} Frontend container updated" \
-        || echo -e "  ${YELLOW}⚠  Frontend container update failed (may need manual update)${NC}"
-    az containerapp update \
-        --name "${RESOURCE_PREFIX}-orchestrator" \
-        --resource-group "${RESOURCE_GROUP}" \
-        --image "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-orchestrator:latest" \
-        --output none 2>/dev/null \
-        && echo -e "  ${GREEN}✔${NC} Orchestrator container updated" \
-        || echo -e "  ${YELLOW}⚠  Orchestrator container update failed (may need manual update)${NC}"
+    for APP_SUFFIX in api frontend orchestrator mcp-tools; do
+        az containerapp update \
+            --name "${RESOURCE_PREFIX}-${APP_SUFFIX}" \
+            --resource-group "${RESOURCE_GROUP}" \
+            --image "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-${APP_SUFFIX}:latest" \
+            --output none 2>/dev/null \
+            && echo -e "  ${GREEN}✔${NC} ${APP_SUFFIX} container updated" \
+            || echo -e "  ${YELLOW}⚠  ${APP_SUFFIX} container update failed (may need manual update)${NC}"
+    done
 fi
 
 step_done

@@ -189,33 +189,50 @@ class MockPipeline(BasePipeline):
 
 
 class RealPipeline(BasePipeline):
-    """Production pipeline: MAF SequentialBuilder with FoundryAgent + Agent.
+    """Production pipeline: FoundryAgent + MCPStreamableHTTPTool + SequentialBuilder.
 
-    - Safety & Formatter: FoundryAgent (registered PromptAgents, no local tools)
-    - SQLGenerator: Agent + FoundryChatClient (local FunctionTools for schema/validate/execute)
-    
-    SequentialBuilder orchestrates: Safety → SQLGenerator → Formatter
-    with shared conversation context flowing through all participants.
+    All agents are FoundryAgent (registered PromptAgents in Azure AI Foundry).
+    SQL tools are served by a remote MCP server (FastMCP on a separate ACA).
+    SequentialBuilder orchestrates: Safety → SQLGenerator → Formatter.
     """
 
     def __init__(self) -> None:
-        from agent_framework import Agent
-        from agent_framework.foundry import FoundryAgent, FoundryChatClient
+        from agent_framework import MCPStreamableHTTPTool
+        from agent_framework.foundry import FoundryAgent
         from agent_framework.orchestrations import SequentialBuilder
         from azure.identity import DefaultAzureCredential
-
-        from app.tools.schema_provider import get_schema
-        from app.tools.sql_executor import execute_sql
-        from app.tools.sql_validator import validate_sql
 
         endpoint = settings.AI_PROJECT_ENDPOINT
         credential = DefaultAzureCredential()
 
-        # Safety & Formatter: FoundryAgent (invokes registered Foundry agents, visible in portal)
+        # MCP tool connecting to the remote SQL tools server
+        self._mcp_tool = MCPStreamableHTTPTool(
+            name="sql-tools",
+            url=settings.MCP_TOOLS_URL,
+        )
+
+        # All agents are FoundryAgent — registered PromptAgents in AI Foundry
         self._safety = FoundryAgent(
             project_endpoint=endpoint,
             agent_name="inriver-safety",
             credential=credential,
+        )
+
+        self._sql_gen = FoundryAgent(
+            project_endpoint=endpoint,
+            agent_name="inriver-sql-generator",
+            credential=credential,
+            tools=[self._mcp_tool],
+            instructions=(
+                "You are a SQL generation agent for the InRiver DataCase PIM system.\n"
+                "You have MCP tools available. You MUST follow these steps:\n"
+                "1. Call get_schema(database=<db>) to see available tables and columns\n"
+                "2. Generate a T-SQL SELECT query based on the user's question and the schema\n"
+                "3. Call validate_sql(sql=<query>) to verify it is safe\n"
+                "4. Call execute_sql(sql=<query>, database=<db>) to run it\n"
+                "5. Include the SQL query and the full results in your response\n"
+                "IMPORTANT: Always call all tools. The database name is in the user's message."
+            ),
         )
 
         self._formatter = FoundryAgent(
@@ -224,29 +241,7 @@ class RealPipeline(BasePipeline):
             credential=credential,
         )
 
-        # SQLGenerator: Agent + FoundryChatClient (needs local FunctionTool execution)
-        # FoundryAgent does NOT execute local Python tools — Agent + FoundryChatClient does
-        self._sql_gen = Agent(
-            client=FoundryChatClient(
-                project_endpoint=endpoint,
-                credential=credential,
-                model=settings.MODEL_DEPLOYMENT,
-            ),
-            name="inriver-sql-generator",
-            instructions=(
-                "You are a SQL generation agent for the InRiver DataCase PIM system.\n"
-                "You MUST follow these steps:\n"
-                "1. Call get_schema(database=<db>) to see available tables and columns\n"
-                "2. Generate a T-SQL SELECT query based on the user's question\n"
-                "3. Call validate_sql(sql=<query>) to verify it is safe\n"
-                "4. Call execute_sql(sql=<query>, database=<db>) to run it\n"
-                "5. Report the SQL and the execution results\n"
-                "IMPORTANT: Always call all tools. The database name is in the user's message."
-            ),
-            tools=[get_schema, validate_sql, execute_sql],
-        )
-
-        # MAF SequentialBuilder: Safety → SQLGenerator → Formatter
+        # MAF SequentialBuilder: Safety → SQLGenerator (with MCP tools) → Formatter
         self._workflow = SequentialBuilder(
             participants=[self._safety, self._sql_gen, self._formatter],
             intermediate_outputs=True,
