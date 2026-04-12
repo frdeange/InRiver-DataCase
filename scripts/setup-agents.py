@@ -28,7 +28,8 @@ SQL_MCP_TOOL = MCPTool(
 AGENTS = {
     "inriver-safety": {
         "description": "Screens user input for injection attacks, cross-tenant requests, and harmful content",
-        "tools": [],  # No tools needed
+        "model": "gpt-5.4-nano",  # Simple classification — nano is sufficient
+        "tools": [],
         "instructions": """You are a security screening agent for the InRiver DataCase system.
 
 Your job is to analyze user input and determine if it is safe to process.
@@ -47,7 +48,8 @@ Respond with JSON only: {"safe": true/false, "reason": "brief explanation"}""",
     },
     "inriver-sql-generator": {
         "description": "Translates NL to T-SQL SELECT queries using MCP tools for schema, validation, and execution",
-        "tools": [SQL_MCP_TOOL],  # MCP tools for schema, validation, execution
+        "model": "gpt-5.4-mini",  # Needs reasoning for SQL generation + tool calling
+        "tools": [SQL_MCP_TOOL],
         "instructions": """You are a SQL generation agent for the InRiver DataCase PIM system.
 You have MCP tools available. You MUST follow these steps for EVERY query:
 
@@ -67,7 +69,8 @@ RULES:
     },
     "inriver-response-formatter": {
         "description": "Converts raw SQL results into natural language answers",
-        "tools": [],  # No tools needed
+        "model": "gpt-5.4-nano",  # Simple text formatting — nano is sufficient
+        "tools": [],
         "instructions": """You are a response formatting agent for the InRiver DataCase system.
 
 Your job is to convert raw SQL query results into clear, helpful natural language answers.
@@ -94,7 +97,7 @@ def main() -> None:
         try:
             definition = PromptAgentDefinition(
                 instructions=config["instructions"],
-                model=MODEL,
+                model=config["model"],
             )
             if config["tools"]:
                 definition["tools"] = config["tools"]
