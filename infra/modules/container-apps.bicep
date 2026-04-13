@@ -218,6 +218,10 @@ resource orchestratorApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'AZURE_AI_PROJECT_ENDPOINT'
               value: aiProjectEndpoint
             }
+            {
+              name: 'ENABLE_INSTRUMENTATION'
+              value: 'true'
+            }
           ]
         }
       ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -10,6 +11,20 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from app.pipeline import MockPipeline, get_pipeline
+
+# Enable Agent Framework OpenTelemetry instrumentation
+if os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"):
+    try:
+        from azure.monitor.opentelemetry import configure_azure_monitor
+
+        configure_azure_monitor()
+        os.environ.setdefault("ENABLE_INSTRUMENTATION", "true")
+        structlog.get_logger().info("azure_monitor_configured")
+    except ImportError:
+        structlog.get_logger().warning("azure-monitor-opentelemetry not installed — telemetry disabled")
+else:
+    # Enable console exporters for local dev
+    os.environ.setdefault("ENABLE_INSTRUMENTATION", os.environ.get("ENABLE_INSTRUMENTATION", "false"))
 
 logger = structlog.get_logger()
 
