@@ -16,16 +16,23 @@ from app.pipeline import MockPipeline, get_pipeline
 if os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"):
     try:
         from azure.monitor.opentelemetry import configure_azure_monitor
-        from agent_framework.observability import create_resource, enable_instrumentation
+        from agent_framework.observability import (
+            create_resource,
+            enable_instrumentation,
+        )
 
         configure_azure_monitor(resource=create_resource())
         enable_instrumentation()
         structlog.get_logger().info("azure_monitor_configured", service="orchestrator")
     except ImportError:
-        structlog.get_logger().warning("azure-monitor-opentelemetry not installed — telemetry disabled")
+        structlog.get_logger().warning(
+            "azure-monitor-opentelemetry not installed — telemetry disabled"
+        )
 else:
     # Enable console exporters for local dev
-    os.environ.setdefault("ENABLE_INSTRUMENTATION", os.environ.get("ENABLE_INSTRUMENTATION", "false"))
+    os.environ.setdefault(
+        "ENABLE_INSTRUMENTATION", os.environ.get("ENABLE_INSTRUMENTATION", "false")
+    )
 
 logger = structlog.get_logger()
 
@@ -45,7 +52,19 @@ class QueryRequest(BaseModel):
     schema_: str = ""
     user_email: str = ""
 
-    model_config = {"populate_by_name": True, "json_schema_extra": {"examples": [{"question": "Show all products", "database": "db-acme", "schema": "", "user_email": "user@example.com"}]}}
+    model_config = {
+        "populate_by_name": True,
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "question": "Show all products",
+                    "database": "db-acme",
+                    "schema": "",
+                    "user_email": "user@example.com",
+                }
+            ]
+        },
+    }
 
     def __init__(self, **data: Any) -> None:
         # Accept "schema" from JSON payload but map to schema_

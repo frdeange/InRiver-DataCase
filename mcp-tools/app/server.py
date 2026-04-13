@@ -55,8 +55,17 @@ def get_schema(database: str) -> str:
 # ─── SQL Validator ─────────────────────────────────────────
 
 FORBIDDEN_TYPES = {
-    "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
-    "EXEC", "TRUNCATE", "CREATE", "MERGE", "GRANT", "REVOKE",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "DROP",
+    "ALTER",
+    "EXEC",
+    "TRUNCATE",
+    "CREATE",
+    "MERGE",
+    "GRANT",
+    "REVOKE",
 }
 
 
@@ -83,17 +92,22 @@ def validate_sql(sql: str) -> str:
             continue
         stmt_type = statement.key.upper()
         if stmt_type in FORBIDDEN_TYPES:
-            return json.dumps({"valid": False, "reason": f"Forbidden statement type: {stmt_type}"})
+            return json.dumps(
+                {"valid": False, "reason": f"Forbidden statement type: {stmt_type}"}
+            )
         if stmt_type != "SELECT":
             upper_sql = sql.strip().upper()
             for kw in FORBIDDEN_TYPES:
                 if upper_sql.startswith(kw):
-                    return json.dumps({"valid": False, "reason": f"Forbidden statement type: {kw}"})
+                    return json.dumps(
+                        {"valid": False, "reason": f"Forbidden statement type: {kw}"}
+                    )
 
     return json.dumps({"valid": True, "reason": "Valid SELECT statement"})
 
 
 # ─── SQL Executor ──────────────────────────────────────────
+
 
 def _get_azure_sql_token() -> bytes:
     """Get Azure AD access token for Azure SQL."""
@@ -126,7 +140,9 @@ def execute_sql(sql: str, database: str) -> str:
     try:
         token_struct = _get_azure_sql_token()
         SQL_COPT_SS_ACCESS_TOKEN = 1256
-        conn = pyodbc.connect(conn_str, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})
+        conn = pyodbc.connect(
+            conn_str, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct}
+        )
 
         cursor = conn.cursor()
         cursor.execute(sql)
@@ -137,13 +153,23 @@ def execute_sql(sql: str, database: str) -> str:
 
         clean_rows = []
         for row in rows:
-            clean_rows.append([
-                val if isinstance(val, (int, float, str, bool, type(None))) else str(val)
-                for val in row
-            ])
+            clean_rows.append(
+                [
+                    (
+                        val
+                        if isinstance(val, (int, float, str, bool, type(None)))
+                        else str(val)
+                    )
+                    for val in row
+                ]
+            )
 
-        return json.dumps({"columns": columns, "rows": clean_rows, "database": database})
+        return json.dumps(
+            {"columns": columns, "rows": clean_rows, "database": database}
+        )
 
     except Exception as exc:
         logger.error("SQL execution failed: %s", exc)
-        return json.dumps({"columns": ["error"], "rows": [[str(exc)]], "database": database})
+        return json.dumps(
+            {"columns": ["error"], "rows": [[str(exc)]], "database": database}
+        )
