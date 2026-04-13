@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useChatStore } from '../store/chatStore';
+import { useAuth } from '../auth/useAuth';
 import { MessageBubble } from './MessageBubble';
 
 export function ChatWindow() {
   const messages = useChatStore((s) => s.messages);
+  const { selectedDatabase } = useAuth();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,7 +33,7 @@ export function ChatWindow() {
             ].map((q) => (
               <button
                 key={q}
-                onClick={() => useChatStore.getState().sendQuery(q)}
+                onClick={() => useChatStore.getState().sendQuery(q, selectedDatabase ?? undefined)}
                 className="text-xs px-3 py-2 rounded-lg bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 text-gray-600 transition-colors border border-gray-200"
               >
                 {q}
