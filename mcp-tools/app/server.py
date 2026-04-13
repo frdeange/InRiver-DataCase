@@ -9,11 +9,12 @@ import logging
 import struct
 from pathlib import Path
 
+import structlog
 import sqlglot
 from fastmcp import FastMCP
 from sqlglot.errors import ParseError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 mcp = FastMCP(
     name="InRiver SQL Tools",

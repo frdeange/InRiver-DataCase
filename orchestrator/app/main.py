@@ -16,10 +16,11 @@ from app.pipeline import MockPipeline, get_pipeline
 if os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"):
     try:
         from azure.monitor.opentelemetry import configure_azure_monitor
+        from agent_framework.observability import create_resource, enable_instrumentation
 
-        configure_azure_monitor()
-        os.environ.setdefault("ENABLE_INSTRUMENTATION", "true")
-        structlog.get_logger().info("azure_monitor_configured")
+        configure_azure_monitor(resource=create_resource())
+        enable_instrumentation()
+        structlog.get_logger().info("azure_monitor_configured", service="orchestrator")
     except ImportError:
         structlog.get_logger().warning("azure-monitor-opentelemetry not installed — telemetry disabled")
 else:

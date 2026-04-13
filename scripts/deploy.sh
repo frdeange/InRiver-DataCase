@@ -252,6 +252,7 @@ KEY_VAULT_NAME=$(echo "${DEPLOY_OUTPUT}" | jq -r '.keyVaultName.value // empty')
 IDENTITY_CLIENT_ID=$(echo "${DEPLOY_OUTPUT}" | jq -r '.identityClientId.value // empty')
 MODEL_DEPLOYMENT=$(echo "${DEPLOY_OUTPUT}" | jq -r '.modelDeploymentName.value // empty')
 AI_ENDPOINT=$(echo "${DEPLOY_OUTPUT}" | jq -r '.aiProjectEndpoint.value // empty')
+APPINSIGHTS_CONN_STRING=$(echo "${DEPLOY_OUTPUT}" | jq -r '.appInsightsConnectionString.value // empty')
 
 echo -e "  ACR:      ${ACR_LOGIN_SERVER:-N/A}"
 echo -e "  SQL:      ${SQL_SERVER_FQDN:-N/A}"
@@ -310,6 +311,7 @@ else
     if [[ -f "${ROOT_DIR}/frontend/Dockerfile" ]]; then
         echo -e "  Building frontend image..."
         docker build -t "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-frontend:latest" "${ROOT_DIR}/frontend" \
+            --build-arg "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=${APPINSIGHTS_CONN_STRING}" \
             || step_fail "Frontend Docker build failed."
         echo -e "  Pushing frontend image..."
         docker push "${ACR_LOGIN_SERVER}/${RESOURCE_PREFIX}-frontend:latest" \

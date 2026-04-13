@@ -277,6 +277,10 @@ resource mcpToolsApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'SQL_SERVER'
               value: sqlServerFqdn
             }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              value: appInsightsConnectionString
+            }
           ]
         }
       ]

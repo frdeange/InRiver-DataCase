@@ -1,6 +1,17 @@
 """Entry point for the MCP Tools server."""
 
+import os
+
 import uvicorn
+
+# ── Azure Monitor / OpenTelemetry ───────────────────────────
+if os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING"):
+    try:
+        from azure.monitor.opentelemetry import configure_azure_monitor
+
+        configure_azure_monitor()
+    except ImportError:
+        pass
 
 from app.server import mcp
 
